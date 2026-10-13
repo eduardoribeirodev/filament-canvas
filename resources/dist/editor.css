@@ -1,0 +1,555 @@
+/* resources/css/editor.css */
+.fc-editor {
+  --fc-border: var(--gray-200);
+  --fc-surface: white;
+  --fc-text: var(--gray-950);
+  --fc-muted: var(--gray-500);
+  --fc-accent: var(--primary-600);
+  --fc-accent-soft: color-mix(in oklab, var(--primary-500) 8%, transparent);
+  --fc-crop: var(--warning-500);
+  border: 1px solid var(--fc-border);
+  border-radius: .75rem;
+  overflow: hidden;
+  background: var(--fc-surface);
+  color: var(--fc-text);
+  font-size: .875rem;
+  line-height: 1.5;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--gray-950) 5%, transparent);
+}
+.fc-editor [x-cloak] {
+  display: none !important;
+}
+.fc-editor .fc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: 1rem;
+}
+.fc-editor .fc-heading {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+.fc-editor .fc-heading-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: .5rem;
+  color: var(--fc-accent);
+  background: var(--fc-accent-soft);
+}
+.fc-editor .fc-heading-icon > .fi-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.fc-editor .fc-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.fc-editor .fc-heading p {
+  margin: .125rem 0 0;
+  font-size: .75rem;
+  color: var(--fc-muted);
+}
+.fc-editor .fc-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-inline-start: auto;
+}
+.fc-editor .fc-history {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  border-inline-start: 1px solid var(--fc-border);
+  padding-inline-start: .75rem;
+}
+.fc-editor .fc-history > .fi-icon-btn {
+  margin: 0;
+}
+.fc-editor .fc-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  contain: size;
+  overscroll-behavior: contain;
+  gap: .5rem;
+  padding: .75rem .5rem;
+  border-inline-end: 1px solid var(--fc-border);
+}
+.canvas-livewire-shell .canvas-toolbar-items {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.canvas-livewire-shell .canvas-toolbar-item {
+  flex-shrink: 0;
+}
+.canvas-livewire-shell .canvas-toolbar-item-btn {
+  width: 100%;
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+.canvas-livewire-shell .canvas-toolbar-item-btn:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+.canvas-livewire-shell .canvas-toolbar-item-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+.canvas-livewire-shell .canvas-toolbar-item-btn:disabled:hover {
+  background: transparent;
+}
+.fc-editor .fc-layout {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 360px;
+  border-top: 1px solid var(--fc-border);
+  height: var(--fc-workspace-height, clamp(360px, 65dvh, 800px));
+  min-height: 280px;
+}
+.fc-editor .fc-stage-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.fc-editor .fc-stage {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--gray-50);
+  background-image: radial-gradient(var(--gray-300) .75px, transparent .75px);
+  background-size: 20px 20px;
+  outline: none;
+}
+.fc-editor .fc-stage:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fc-accent);
+}
+.fc-editor .fc-paper {
+  position: relative;
+  transform-origin: top left;
+  touch-action: none;
+  background: white;
+  color: #222;
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--gray-950) 15%, transparent);
+}
+.fc-editor .fc-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+.fc-editor .fc-selection {
+  position: absolute;
+  box-sizing: border-box;
+  transform-origin: center;
+  cursor: move;
+  user-select: none;
+}
+.fc-editor .fc-selection.fc-selected,
+.fc-editor .fc-selection:focus-visible {
+  outline: 2px solid var(--fc-accent);
+}
+.fc-editor .fc-selection:not(.fc-selected):hover {
+  outline: 1px solid var(--fc-accent);
+}
+.fc-editor .fc-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid white;
+  border-radius: 2px;
+  background: var(--fc-accent);
+  padding: 0;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--gray-950) 25%, transparent);
+}
+.fc-editor .fc-handle:focus-visible {
+  outline: 2px solid var(--fc-accent);
+  outline-offset: 2px;
+}
+.fc-editor .fc-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-inline-start: 1px solid var(--fc-border);
+}
+.fc-editor .fc-sidebar > .fc-tabs {
+  padding: .75rem;
+  border-bottom: 1px solid var(--fc-border);
+  flex-shrink: 0;
+}
+.fc-editor .fc-tabs > .fi-tabs {
+  width: 100%;
+  margin: 0;
+}
+.fc-editor .fc-tabs .fi-tabs-item {
+  flex: 1;
+}
+.fc-editor .fc-inspector {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.fc-editor .fc-properties {
+  display: grid;
+  gap: 1.25rem;
+}
+.fc-editor .fc-fields {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fc-editor .fc-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+}
+.fc-editor .fc-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+.fc-editor .fc-section-heading h3 {
+  font-weight: 600;
+  font-size: .875rem;
+  margin: 0;
+}
+.fc-editor .fc-geometry {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--fc-border);
+}
+.fc-editor .fc-empty {
+  padding: 2.5rem 0;
+}
+.fc-editor .fc-caption {
+  margin: 0 0 .75rem;
+  font-size: .75rem;
+  color: var(--fc-muted);
+}
+.fc-editor .fc-layer-list {
+  display: grid;
+  gap: .5rem;
+}
+.fc-editor .fc-layer {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+  padding: .5rem;
+  border: 1px solid var(--fc-border);
+  border-radius: .5rem;
+  background: var(--fc-surface);
+}
+.fc-editor .fc-layer.fc-layer-selected {
+  border-color: var(--fc-accent);
+  background: var(--fc-accent-soft);
+}
+.fc-editor .fc-layer-handle {
+  flex-shrink: 0;
+  margin: 0;
+  cursor: grab;
+}
+.fc-editor .fc-layer-label {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex: 1;
+  min-width: 0;
+  padding: .125rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.fc-editor .fc-layer-label:focus-visible {
+  outline: 2px solid var(--fc-accent);
+  outline-offset: 2px;
+  border-radius: .25rem;
+}
+.fc-editor .fc-layer-text {
+  display: grid;
+  gap: .125rem;
+  min-width: 0;
+  flex: 1;
+}
+.fc-editor .fc-layer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.fc-editor .fc-layer-type {
+  font-size: .75rem;
+  color: var(--fc-muted);
+}
+.fc-editor .fc-layer-label > .fi-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--fc-muted);
+}
+.fc-editor .fc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: .75rem;
+  padding: .75rem 1rem;
+  border-top: 1px solid var(--fc-border);
+}
+.fc-editor .fc-snap {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .875rem;
+  color: var(--fc-muted);
+}
+.fc-editor .fc-snap > .fi-input-wrp {
+  width: 9rem;
+}
+.canvas-livewire-shell .canvas-zoom-control {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-inline-start: auto;
+  font-size: .875rem;
+  color: var(--gray-500);
+}
+.canvas-livewire-shell .canvas-zoom-field {
+  width: 7.5rem;
+  min-width: 0;
+  padding: .5rem;
+}
+.canvas-livewire-shell .canvas-zoom-output {
+  width: 2.75rem;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.dark .canvas-livewire-shell .canvas-zoom-control {
+  color: var(--gray-400);
+}
+.fc-editor .fc-help {
+  padding: .75rem 1rem;
+  border-top: 1px solid var(--fc-border);
+  font-size: .75rem;
+  color: var(--fc-muted);
+}
+.fc-editor .fc-help summary {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 500;
+}
+.fc-editor .fc-help summary > .fi-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.fc-editor .fc-help-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem 1rem;
+  margin-top: .75rem;
+}
+.fc-editor .fc-help-content p {
+  margin: 0;
+}
+.fc-editor .fc-help kbd {
+  font: inherit;
+  font-weight: 600;
+  color: var(--fc-text);
+}
+.fc-error {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  border: 1px solid color-mix(in oklab, var(--danger-500) 25%, transparent);
+  border-radius: .5rem;
+  padding: .75rem 1rem;
+  margin: 0 1rem .75rem;
+  color: var(--danger-600);
+  background: color-mix(in oklab, var(--danger-500) 5%, transparent);
+  font-size: .875rem;
+}
+.fc-error > .fi-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+.fc-error p {
+  margin: 0;
+}
+.canvas-livewire-shell > .fc-error {
+  margin: .75rem 0 0;
+}
+.dark .fc-editor {
+  --fc-border: color-mix(in oklab, white 10%, transparent);
+  --fc-surface: var(--gray-900);
+  --fc-text: white;
+  --fc-muted: var(--gray-400);
+  --fc-accent: var(--primary-500);
+  --fc-accent-soft: color-mix(in oklab, var(--primary-500) 12%, transparent);
+}
+.dark .fc-editor .fc-stage {
+  background-color: var(--gray-950);
+  background-image: radial-gradient(var(--gray-700) .75px, transparent .75px);
+}
+.dark .fc-error {
+  color: var(--danger-400);
+}
+@media (max-width: 1023px) {
+  .fc-editor .fc-layout {
+    grid-template-columns: 64px minmax(0, 1fr);
+    height: auto;
+  }
+  .fc-editor .fc-toolbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .fc-editor .fc-stage-column {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .fc-editor .fc-stage-column {
+    height: max(320px, 55dvh);
+  }
+  .fc-editor .fc-sidebar {
+    grid-column: 1 / -1;
+    border-inline-start: 0;
+    border-top: 1px solid var(--fc-border);
+    max-height: 72dvh;
+  }
+  .fc-editor .fc-inspector {
+    flex: 1 1 auto;
+  }
+}
+@media (max-width: 639px) {
+  .fc-editor .fc-header {
+    padding: .75rem;
+  }
+  .fc-editor .fc-actions {
+    width: 100%;
+    gap: .75rem;
+  }
+  .fc-editor .fc-actions > .fi-btn {
+    margin-inline-start: auto;
+  }
+  .fc-editor .fc-history {
+    border: 0;
+    padding: 0;
+  }
+  .fc-editor .fc-layout {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .fc-editor .fc-inspector {
+    padding: 1rem;
+  }
+  .fc-editor .fc-footer {
+    padding: .75rem;
+  }
+  .fc-editor .fc-help-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-editor .fi-btn,
+  .fc-editor .fi-icon-btn,
+  .fc-editor .fi-tabs-item {
+    transition: none;
+  }
+}
+.canvas-livewire-shell .canvas-snap-guides {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  pointer-events: none;
+  overflow: visible;
+}
+.canvas-livewire-shell .canvas-snap-guides line {
+  stroke: var(--primary-500);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.canvas-livewire-shell .canvas-alignment-control {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .875rem;
+  color: var(--gray-500);
+}
+.dark .canvas-livewire-shell .canvas-alignment-control {
+  color: var(--gray-400);
+}
+.canvas-inline-editor-host .fi-fo-rich-editor {
+  min-height: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 0;
+}
+.canvas-inline-editor-host .fi-fo-rich-editor-main {
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+}
+.canvas-inline-editor-host .fi-fo-rich-editor-content {
+  padding: 0;
+  min-height: 0;
+  max-height: none;
+  color: inherit;
+  font-size: inherit;
+}
+.canvas-inline-editor-host .tiptap {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  outline: 2px solid var(--primary-500);
+  font-size: inherit;
+  color: inherit;
+  cursor: text;
+}
+.canvas-inline-editor-host .fi-fo-rich-editor-floating-toolbar {
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  font-family: var(--font-family);
+  font-size: .875rem;
+  line-height: 1.5;
+  white-space: normal;
+  z-index: 50;
+}
+.canvas-inline-editor-host .fi-fo-field-content-col {
+  gap: 0;
+}
