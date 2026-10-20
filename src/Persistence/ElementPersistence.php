@@ -6,8 +6,8 @@ use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Support\BlockValidator;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
@@ -18,14 +18,14 @@ class ElementPersistence
     public function load(Model&CanvasOwner $owner): array
     {
         return $owner->canvasElements()->get()->map(fn ($element) => [
-            'type' => $element->tipo, 'data' => $element->canvasData(),
+            'type' => $element->type, 'data' => $element->canvasData(),
         ])->all();
     }
 
     public static function revision(array $blocks): string
     {
-        foreach ($blocks = ElementData::canonicalizeBlocks($blocks) as &$block) {
-            unset($block['_key'], $block['data']['imagem_url']);
+        foreach ($blocks as &$block) {
+            unset($block['_key'], $block['data']['image_url']);
         }
         unset($block);
 
@@ -38,30 +38,28 @@ class ElementPersistence
             $owner = $owner->newQuery()->lockForUpdate()->findOrFail($owner->getKey());
             $owner->assertCanvasEditable();
             if ($expectedRevision !== null && $expectedRevision !== self::revision($this->load($owner))) {
-                throw ValidationException::withMessages(['blocks' => 'Esta página foi alterada em outra janela. Recarregue antes de continuar.']);
+                throw ValidationException::withMessages(['blocks' => __('filament-canvas::canvas.stale_document')]);
             }
-            $blocks = ElementData::canonicalizeBlocks($blocks);
             [$width, $height] = $owner->canvasSize();
-            // Legacy imports omit envelope defaults, but every persisted block is canonical.
-            foreach ($blocks as &$block) {
-                $block['data'] += ['rotacao_graus' => 0, 'visivel' => true, 'dados' => []];
-            }
-            unset($block);
-            app(BlockValidator::class)->validate($blocks, new CanvasDocument($blocks, $width, $height), ElementRegistry::forOwner($owner), $this->load($owner));
+            app(BlockValidator::class)->validate($blocks, new CanvasDocument($blocks, $width, $height), ElementRegistry::forOwner($owner));
             Validator::make(['blocks' => $blocks], ['blocks.*.data.id' => ['nullable', 'integer', 'distinct']])->validate();
+            if ($context !== null) {
+                $context = $context->forDocument($owner);
+                (new MediaLibrary($context))->validateReferences($blocks, ElementRegistry::forOwner($owner));
+            }
             $existing = $owner->canvasElements()->get()->keyBy('id');
             $kept = [];
             foreach ($blocks as $order => $block) {
                 $data = $block['data'];
                 $id = $data['id'] ?? null;
                 if ($id !== null && ! $existing->has($id)) {
-                    throw ValidationException::withMessages(['blocks' => 'O elemento não pertence a este documento.']);
+                    throw ValidationException::withMessages(['blocks' => __('filament-canvas::canvas.foreign_element')]);
                 }
                 $element = $id !== null ? $existing[$id] : $owner->canvasElements()->make();
-                $element->tipo = $block['type'];
-                $element->fill(Arr::only($data, ['nome', 'x_pt', 'y_pt', 'largura_pt', 'altura_pt', 'rotacao_graus', 'visivel']));
-                $element->camada = $order;
-                $element->dados = $element->mergeCanvasData($data['dados']);
+                $element->type = $block['type'];
+                $element->fill(Arr::only($data, ['name', 'x_pt', 'y_pt', 'width_pt', 'height_pt', 'rotation_deg', 'visible']));
+                $element->layer = $order;
+                $element->properties = $element->mergeCanvasData($data['properties']);
                 $element->save();
                 $element->syncCanvasData($data, $context);
                 $kept[] = $element->id;

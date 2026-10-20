@@ -21,9 +21,11 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+
 class PersistenceTest extends TestCase
 {
     private bool $persistenceAllowUpdate = true;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -38,8 +40,9 @@ class PersistenceTest extends TestCase
         (require dirname(__DIR__, 2).'/database/migrations/2026_10_10_020000_create_canvas_elements_table.php')->up();
         $this->createMediaTable();
         Storage::fake('public');
-        Gate::before(fn($user, $ability) => $ability === 'view' || $this->persistenceAllowUpdate);
+        Gate::before(fn ($user, $ability) => $ability === 'view' || $this->persistenceAllowUpdate);
     }
+
     public function test_default_model_store_saves_reorders_and_deletes_elements_for_an_arbitrary_owner(): void
     {
         $owner = CanvasTestDocument::create();
@@ -54,15 +57,16 @@ class PersistenceTest extends TestCase
         $element = $owner->canvasElements()->first();
         $this->assertInstanceOf(CanvasElement::class, $element);
         $this->assertTrue($owner->is($element->elementable));
-        $this->assertSame(['text' => 'Primeiro', 'font_size' => 16, 'rich_text' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'Primeiro']]]]], 'html' => '<p style="text-align: center;">Primeiro</p>'], $element->dados);
+        $this->assertSame(['text' => 'Primeiro', 'font_size' => 16, 'rich_text' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'Primeiro']]]]], 'html' => '<p style="text-align: center;">Primeiro</p>'], $element->properties);
         $reordered = $store->save($context, array_reverse($result->blocks), $result->revision);
-        $this->assertSame(['Segundo', 'Primeiro'], array_column(array_column($reordered->blocks, 'data'), 'nome'));
+        $this->assertSame(['Segundo', 'Primeiro'], array_column(array_column($reordered->blocks, 'data'), 'name'));
         $remaining = $store->save($context, [$reordered->blocks[0]], $reordered->revision);
         $this->assertSame(1, $owner->canvasElements()->count());
-        $this->assertSame('Segundo', $remaining->blocks[0]['data']['nome']);
+        $this->assertSame('Segundo', $remaining->blocks[0]['data']['name']);
         $owner->delete();
         $this->assertSame(0, CanvasElement::count());
     }
+
     public function test_default_store_rejects_stale_revisions_foreign_ids_and_duplicate_ids_without_partial_writes(): void
     {
         $owner = CanvasTestDocument::create();
@@ -82,6 +86,7 @@ class PersistenceTest extends TestCase
             }
         }
     }
+
     public function test_owner_policies_and_business_guards_are_enforced_by_default_persistence(): void
     {
         $owner = CanvasTestDocument::create();
@@ -104,6 +109,7 @@ class PersistenceTest extends TestCase
             $this->assertSame(0, CanvasElement::count());
         }
     }
+
     public function test_configured_element_classes_are_used_in_the_panel_and_default_model_validation(): void
     {
         config()->set('filament-canvas.elements', [CanvasTestNoticeElement::class]);
@@ -116,27 +122,28 @@ class PersistenceTest extends TestCase
         $block['type'] = 'notice';
         $saved = $store->save($context, [$block], $store->load($context)->revision);
         $this->assertSame('notice', $saved->blocks[0]['type']);
-        $this->assertSame('Aviso', $owner->canvasElements()->sole()->dados['text']);
+        $this->assertSame('Aviso', $owner->canvasElements()->sole()->properties['text']);
     }
+
     public function test_default_media_persistence_copies_an_authorized_image_and_rejects_another_owner(): void
     {
         $owner = CanvasTestDocument::create();
         $other = CanvasTestDocument::create();
-        $block = $this->persistenceBlock('Imagem');
+        $block = $this->persistenceBlock('Image');
         $block['type'] = 'asset';
-        $block['data']['dados'] = [];
-        $source = $owner->canvasElements()->create(['tipo' => 'asset', ...$block['data']]);
-        $media = $source->addMedia(UploadedFile::fake()->image('fonte.png', 4, 4))->toMediaCollection('imagem');
+        $block['data']['properties'] = [];
+        $source = $owner->canvasElements()->create(['type' => 'asset', ...$block['data']]);
+        $media = $source->addMedia(UploadedFile::fake()->image('fonte.png', 4, 4))->toMediaCollection('image');
         $hash = hash_file('sha256', $media->getPath());
         $store = new EloquentDocumentStore(CanvasTestDocument::class);
         $context = $this->persistenceContext($owner);
         $initial = $store->load($context);
-        $block['data']['imagem_origem'] = $media->id;
+        $block['data']['image_id'] = $media->id;
         $saved = $store->save($context, [...$initial->blocks, $block], $initial->revision);
-        $copy = $owner->canvasElements()->where('id', $saved->blocks[1]['data']['id'])->sole()->imagem();
+        $copy = $owner->canvasElements()->where('id', $saved->blocks[1]['data']['id'])->sole()->image();
         $this->assertNotSame($media->id, $copy->id);
         $this->assertSame($hash, hash_file('sha256', $copy->getPath()));
-        $this->assertSame($copy->id, $saved->blocks[1]['data']['imagem_origem']);
+        $this->assertSame($copy->id, $saved->blocks[1]['data']['image_id']);
         try {
             $store->save($this->persistenceContext($other), [$block], $store->load($this->persistenceContext($other))->revision);
             $this->fail('A media reference from another owner must be rejected.');
@@ -149,13 +156,15 @@ class PersistenceTest extends TestCase
         $this->assertFileDoesNotExist($media->getPath());
         $this->assertFileDoesNotExist($copy->getPath());
     }
+
     private function persistenceContext(CanvasTestDocument $owner): EditorContext
     {
-        return new EditorContext(new DocumentReference('document', $owner->id), (new User())->forceFill(['id' => 1]));
+        return new EditorContext(new DocumentReference('document', $owner->id), (new User)->forceFill(['id' => 1]));
     }
+
     private function persistenceBlock(string $name): array
     {
-        return ['type' => 'text', 'data' => ['nome' => $name, 'x_pt' => 10, 'y_pt' => 10, 'largura_pt' => 100, 'altura_pt' => 50, 'rotacao_graus' => 0, 'visivel' => true, 'dados' => ['text' => $name, 'font_size' => 16]]];
+        return ['type' => 'text', 'data' => ['name' => $name, 'x_pt' => 10, 'y_pt' => 10, 'width_pt' => 100, 'height_pt' => 50, 'rotation_deg' => 0, 'visible' => true, 'properties' => ['text' => $name, 'font_size' => 16, 'rich_text' => $this->textDocument($name)]]];
     }
 }
 class CanvasTestNoticeElement extends TextElement
@@ -168,8 +177,11 @@ class CanvasTestNoticeElement extends TextElement
 class CanvasTestDocument extends Model implements CanvasOwner
 {
     use HasCanvas;
+
     protected $table = 'canvas_test_documents';
+
     protected $guarded = ['id'];
+
     public function assertCanvasEditable(): void
     {
         if ($this->locked) {

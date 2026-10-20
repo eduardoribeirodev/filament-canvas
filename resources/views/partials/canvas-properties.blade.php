@@ -9,5 +9,5 @@
     @if ($this->inspectorType !== null)
         {{ $this->propertiesForm }}
     @endif
-    <p x-show="current && hasCapability(current, 'text')" class="text-xs text-gray-500 dark:text-gray-400">Dois cliques no texto da prancheta permitem editar diretamente. Esc cancela a edição.</p>
+    <p x-show="current && isText(current)" class="text-xs text-gray-500 dark:text-gray-400">{{ __('filament-canvas::canvas.inline_hint') }}</p>
 </div>

@@ -1,347 +1,629 @@
 # Filament Canvas
 
-Editor visual reutilizável para Filament 5, Laravel 12/13 e Livewire 4. O pacote fornece a prancheta, tipos de elemento, página de edição, componente de Schema e persistência Eloquent. Catálogos, produtos e publicação continuam na aplicação.
+A visual document editor for Filament PHP. Arrange text, images, drawings and tables on a canvas, edit their attributes with native Filament forms, and build your own elements with a PHP class and an Alpine Blade view.
 
-## Instalação e uso padrão
+![Filament Canvas editor with a composition and its layers](docs/images/editor-overview.png)
+
+### Features
+
+- **Visual editing** — Drag, resize and rotate elements, zoom and pan, align with snapping guides, and manage layer order.
+- **Rich text** — Edit text in the attributes panel or directly on the canvas, preserving its formatting.
+- **Native Filament forms** — Define fields, defaults and validation in the element's `form()` method.
+- **Reactive views** — Alpine bindings update each element locally as its values change.
+- **Custom elements** — Generate a class and view with `make:canvas-element` and register them in your application.
+- **Eloquent persistence** — Attach a composition to an existing model through a polymorphic relation, with revision checks when saving.
+- **Media Library integration** — Select and upload images through Spatie Media Library, including authenticated access to private files.
+- **Shared output** — Reuse the element views and page template for the editor preview and standalone HTML output.
+
+## Installation
+
+Requires PHP 8.2+, Laravel 12 or 13, Filament 5 and Livewire 4. Use a PHP version supported by your Laravel version.
 
 ```bash
-composer require eduardoribeirodev/filament-canvas:^0.1
+composer require eduardoribeirodev/filament-canvas
+```
+
+If your application does not have Spatie Media Library's `media` table, publish its migration:
+
+```bash
+php artisan vendor:publish --provider="Spatie\MediaLibrary\MediaLibraryServiceProvider" --tag="medialibrary-migrations"
+```
+
+Run the migrations and publish Filament assets:
+
+```bash
 php artisan migrate
 php artisan filament:assets
 ```
 
-No desenvolvimento local, configure uma repository Composer `path` apontando para `../pacotes/filament-canvas`, com `options.symlink: true`. As migrations do pacote são carregadas automaticamente e criam `canvas_elements`. O model proprietário precisa existir na aplicação e ter suas próprias migrations e policies.
-
-Adicione o contrato e o trait ao model que terá um Canvas:
-
-```php
-use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
-use EduardoRibeiroDev\FilamentCanvas\Models\Concerns\HasCanvas;
-use Illuminate\Database\Eloquent\Model;
-
-class Documento extends Model implements CanvasOwner
-{
-    use HasCanvas;
-}
-```
-
-Registre o plugin no painel:
+Register the plugin in your panel provider:
 
 ```php
 use EduardoRibeiroDev\FilamentCanvas\CanvasPlugin;
+use Filament\Panel;
 
-$panel->plugins([
-    CanvasPlugin::make(),
-]);
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // Your panel configuration...
+        ->plugin(CanvasPlugin::make());
+}
 ```
 
-O pacote carrega e salva os elementos, confere as policies `view`/`update` do proprietário, compara a revisão e grava em transação. Não é preciso criar um `DocumentStore` para o uso Eloquent padrão.
+The service provider and Artisan command are discovered automatically. The package creates the `canvas_elements` table; your application supplies the document model and its table.
 
-Para incorporar o editor em qualquer Schema:
+## Configuration
 
-```php
-use EduardoRibeiroDev\FilamentCanvas\Schemas\Components\Canvas;
+Publish the configuration file:
 
-$schema->components([
-    Canvas::make()
-        ->owner(Documento::class, fn () => $this->record->getKey())
-        ->columnSpanFull(),
-]);
+```bash
+php artisan vendor:publish --tag=filament-canvas-config
 ```
 
-O proprietário deve estar salvo. O componente mantém o botão **Salvar composição**: ele salva os elementos na tabela do pacote, independentemente do submit do formulário externo. Não é um campo que desidrata um JSON no formulário.
-
-Para usar a página pronta em um Resource:
+Defaults in [config/filament-canvas.php](config/filament-canvas.php):
 
 ```php
+return [
+    'elements' => [],
+    'width' => 1920,
+    'height' => 1080,
+    'min_zoom' => 0.25,
+    'max_zoom' => 3,
+    'media_disk' => 'public',
+    'library_collection' => 'library',
+    'file_roots' => [],
+];
+```
+
+| Option | Purpose |
+| --- | --- |
+| `elements` | Custom element classes added to the built-in registry, available to editors and model saves. |
+| `width`, `height` | Default canvas dimensions in points. A model can override `canvasSize()`. |
+| `min_zoom` | Minimum editor zoom as a scale (default `0.25`, or 25%). |
+| `max_zoom` | Maximum editor zoom as a scale (default `3`, or 300%). |
+| `media_disk` | Default disk for uploads. |
+| `library_collection` | Default Spatie Media Library collection for uploads. |
+| `file_roots` | Additional local directories allowed by the package's file resolver. |
+
+Set `min_zoom` and `max_zoom` in `config/filament-canvas.php` to change the slider, wheel/pinch gestures and fit-to-screen limits. For example, `0.1` and `5` allow 10%–500%. Both must be positive, with the maximum greater than the minimum. Custom editor views must pass these values as the `minZoom` and `maxZoom` options to `canvas(...)`, as the bundled editor does.
+
+For the public disk, run `php artisan storage:link`. You can publish the package views with `php artisan vendor:publish --tag=filament-canvas-views` if you need to customize the editor interface.
+
+## Core Components
+
+### Document Model
+
+Implement `CanvasOwner` and use `HasCanvas` on the model that owns the composition. Add Spatie's `HasMedia` and `InteractsWithMedia` to support uploads to that document:
+
+```php
+namespace App\Models;
+
+use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
+use EduardoRibeiroDev\FilamentCanvas\Models\Concerns\HasCanvas;
+use Illuminate\Database\Eloquent\Model;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+
+class Document extends Model implements CanvasOwner, HasMedia
+{
+    use HasCanvas;
+    use InteractsWithMedia;
+
+    public function canvasSize(): array
+    {
+        return [841.89, 595.28]; // A4 landscape, in points.
+    }
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('library')->useDisk('public');
+    }
+}
+```
+
+`HasCanvas` supplies the `canvasElements()` relation and the public canvas API. Elements are stored separately from your document's other attributes.
+
+```php
+$canvas = $record->getCanvas();
+
+$result = $record->saveCanvas(
+    $blocks,
+    expectedRevision: $canvas->revision,
+);
+
+$html = $record->renderCanvas();
+```
+
+`getCanvas()` returns a `CanvasDocument` containing `blocks`, `width`, `height`, `revision` and `metadata`. `saveCanvas()` returns the saved `blocks` and their new `revision`. The expected revision is required: stale writes are rejected without changing the document. Both methods accept `user: $user` for jobs or other explicit access contexts. Loading checks `view`; saving checks `update` and the model's editing restrictions.
+
+Define shared composition settings on the model so that the editor and standalone output use the same configuration:
+
+```php
+public function canvasTemplate(): string
+{
+    return 'canvas.document';
+}
+
+public function canvasElementsAvailable(): array
+{
+    return [
+        \EduardoRibeiroDev\FilamentCanvas\Elements\TextElement::class,
+        \EduardoRibeiroDev\FilamentCanvas\Elements\ImageElement::class,
+    ];
+}
+```
+
+The default implementations return `null` to inherit existing configuration. Model settings take precedence over panel defaults; explicit page, schema or render overrides take precedence over model settings. Configure custom elements on the model to make them available to editor saves and background jobs.
+
+Define the document's `view` and `update` policy methods. The editor checks `update` access when opening and saving, and `view` access when loading. Override `assertCanvasEditable(): void` to enforce domain restrictions such as preventing changes to published documents; throw an exception when editing must be rejected.
+
+### Resource Editor Page
+
+Create a page for your existing Filament resource:
+
+```php
+namespace App\Filament\Resources\Documents\Pages;
+
+use App\Filament\Resources\Documents\DocumentResource;
 use EduardoRibeiroDev\FilamentCanvas\Pages\EditCanvas;
 
-class EditarDocumento extends EditCanvas
+class EditDocumentCanvas extends EditCanvas
 {
-    protected static string $resource = DocumentoResource::class;
-}
-
-// DocumentoResource::getPages():
-'canvas' => EditarDocumento::route('/{record}/canvas'),
-```
-
-A subclasse só identifica o Resource. O pacote usa diretamente `DocumentoResource::getModel()`, sem registrar esse model novamente no provider. A página, o Schema e a persistência ficam no pacote. O componente Livewire `filament-canvas.editor` também pode ser incorporado diretamente em Blade.
-
-O editor usa campos nativos Filament, incluindo `RichEditor`, `ColorPicker`, `Repeater` e `Select`. Oferece arraste, redimensionamento, rotação, enquadramento de imagens, zoom, desfazer/refazer e edição de texto por duplo clique. As camadas usam as alças de ordenação do Filament. Shift mantém proporção; Alt/Option redimensiona pelo centro. A pinça mantém fixo o ponto sob o cursor; o controle de zoom usa diretamente o componente Alpine do Slider do Filament, carregado com `FilamentAsset::getAlpineComponentSrc('slider', 'filament/forms')`, de 25% a 300% em incrementos de 1%, mantendo o centro da área visível. O slider acompanha a pinça e o ajuste à tela, atualiza a prancheta durante o arraste e não altera os dados salvos do documento. O estado do controle é local no Alpine, sem Schema de formulário nem propriedade Livewire para o zoom. A integração com o canvas evita reposicionamento durante o gesto e desativa a animação de sincronização; teclado e toque também são suportados. O seletor **Grade** oferece 1, 2, 5, 10 e 20 px, ou nenhum passo, ao mover e redimensionar. O passo considera pixels da prancheta a 100% de zoom e permanece igual ao ampliar ou reduzir; a geometria salva continua em pontos.
-
-O controle **Guias** ativa o encaixe magnético nas bordas e centros da página e dos outros elementos visíveis. Ao mover ou redimensionar, as linhas de alinhamento usam a cor `primary` e desaparecem ao terminar o gesto. A tolerância é de 6 pixels na tela, independentemente do zoom. Ctrl/⌘ suspende o encaixe magnético durante o gesto, preservando o passo escolhido em **Grade**. Elementos girados podem ser alinhados ao mover; seu redimensionamento mantém os eixos locais. As preferências de encaixe e as guias não entram nos dados do documento.
-
-O estilo padrão acompanha automaticamente a fonte e a paleta do painel, inclusive as cores definidas por `Panel::colors()` no `AdminPanelProvider`. A toolbar lateral exibe apenas ícones e usa os estilos de `sidebar.item`, com tooltips laterais do Filament no hover e no foco. Botões, abas, badges e campos usam componentes nativos do Filament; seleção, alças e zoom usam a cor `primary`. Há suporte aos temas claro e escuro e ao layout responsivo. Na página pronta, a área de edição se ajusta à altura disponível; no Schema, usa uma altura própria. Os estilos são registrados pelo pacote e publicados com `php artisan filament:assets`, sem configuração adicional no plugin.
-
-## Templates e opções da página
-
-Sem opções adicionais, o editor abre uma folha branca com os tipos genéricos. O model precisa implementar `CanvasOwner`; `HasCanvas` fornece os comportamentos padrão. O plugin não precisa receber o model do Resource.
-
-Os padrões do painel são opcionais:
-
-```php
-CanvasPlugin::make()
-    ->template('canvas.templates.documento')
-    ->extraElements([BadgeElement::class])
-    ->assetLibrary(MyAssetLibrary::class);
-```
-
-A página pode sobrescrevê-los:
-
-```php
-class EditarDocumento extends EditCanvas
-{
-    protected static string $resource = DocumentoResource::class;
-    protected static ?string $canvasTemplate = 'canvas.templates.contrato';
-    protected static ?array $canvasElements = [TextElement::class, ImageElement::class];
-    protected static ?array $canvasExtraElements = [BadgeElement::class];
-    protected static ?string $canvasAssetLibrary = MyAssetLibrary::class;
-    protected static ?string $canvasEditorView = 'canvas.editor';
+    protected static string $resource = DocumentResource::class;
 }
 ```
 
-A prioridade é **página → painel → pacote**. `elements([...])` / `$canvasElements` definem a lista base; `extraElements([...])` / `$canvasExtraElements` acrescentam tipos e substituem um tipo com o mesmo identificador. Uma lista base na página substitui também os extras padrão do painel, salvo os extras declarados na própria página. `null` herda a opção; `[]` define uma lista vazia. Nas páginas e Schemas, use nomes de classes; instâncias de elementos com argumentos próprios podem ser configuradas no painel.
-
-No Schema, as mesmas opções são fluentes:
+Register it in the resource:
 
 ```php
+public static function getPages(): array
+{
+    return [
+        'index' => Pages\ListDocuments::route('/'),
+        'create' => Pages\CreateDocument::route('/create'),
+        'edit' => Pages\EditDocument::route('/{record}/edit'),
+        'canvas' => Pages\EditDocumentCanvas::route('/{record}/canvas'),
+    ];
+}
+```
+
+Link to it with `DocumentResource::getUrl('canvas', ['record' => $record])`. The page gets the model from its resource and uses that model's class name as the document type by default.
+
+### Embedded Editor
+
+Use the `Canvas` schema component to place the editor inside an existing resource page or schema:
+
+```php
+use App\Models\Document;
+use EduardoRibeiroDev\FilamentCanvas\Schemas\Components\Canvas;
+
 Canvas::make()
-    ->owner(Documento::class, fn () => $this->record->getKey())
-    ->template('canvas.templates.contrato')
-    ->elements([TextElement::class])
-    ->extraElements([BadgeElement::class]);
+    ->record(fn (Document $record) => $record)
+    ->columnSpanFull();
 ```
 
-O template é uma view Blade, sem `<html>` ou `<body>`. Ela recebe `$document` e `$context` ao renderizar um documento, `$blocks` com os elementos posicionados, `$data` com dados adicionais, `$preview`, `$width` e `$height`. Por exemplo:
+Use an existing, saved record. The canvas has its own **Save composition** action and persists its elements independently of the surrounding form.
 
-```blade
-<style>.page{position:relative;width:{{ $width }}pt;height:{{ $height }}pt;background:white;overflow:hidden}.block{position:absolute}</style>
-<section class="page">
-    <div class="cabecalho">{{ $data['title'] ?? '' }}</div>
-    {!! $blocks !!}
-</section>
+## Canvas Elements
+
+### Built-in Elements
+
+| Class | Type | Includes |
+| --- | --- | --- |
+| `TitleElement` | `title` | Rich text with heading defaults and inline editing. |
+| `TextElement` | `text` | Rich text, font size, colors, spacing, columns and links. |
+| `ImageElement` | `asset` | Media selection, cropping, image fit, opacity and flipping. |
+| `DrawingElement` | `drawing` | Drawing geometry, stroke and fill settings. |
+| `DataTableElement` | `data-table` | Editable column headings and rows through native repeaters. |
+
+These classes live in `EduardoRibeiroDev\FilamentCanvas\Elements` and are available by default.
+
+![Table element and its Filament column and row controls](docs/images/data-table.png)
+
+### Creating Custom Elements
+
+Generate an element in your application:
+
+```bash
+php artisan make:canvas-element Notice
 ```
 
-Para usar a folha padrão e acrescentar decoração, inclua `filament-canvas::templates.blank` e acrescente CSS ou conteúdo posicionado. O pacote envolve a mesma view em `filament-canvas::document`: somente o modo de saída muda, com a escala de pt para px na prévia e `@page` na impressão.
+The command asks **Which built-in element would you like to extend?** Choose **None (generic element)**, **Title**, **Text**, **Image**, **Drawing** or **Data table**.
 
-O contrato opcional `CanvasRenderData` permite ao model fornecer `canvasRenderData(CanvasDocument $document, EditorContext $context): array`. O documento recebido contém a composição ainda não salva. Esse método prepara dados e verifica regras do domínio; a apresentação permanece nas views. Não é necessário implementar `PreviewRenderer` no model.
+The command creates two files:
 
-Para exportar um documento usando as opções da página:
+```text
+app/Canvas/Elements/Notice.php
+resources/views/canvas/elements/notice.blade.php
+```
+
+Choosing **None (generic element)** generates a working field and its default value:
 
 ```php
-$plugin = EditarDocumento::getCanvasPlugin('admin');
-$type = EditarDocumento::getCanvasDocumentType();
-$document = $plugin->resolveDocumentStore($type)->load($context);
-$html = $plugin->resolveRenderer($type)->renderDocument($document, $context);
-```
+namespace App\Canvas\Elements;
 
-`renderDocument()` usa o mesmo template, com impressão por padrão; `render()` usa a prévia. `renderOutput($data, $variables)` serve a exportadores com dados congelados ou várias páginas. A aplicação fornece seu contexto completo ao template; a folha padrão aceita `pageContents` com o HTML interno de cada página. `renderTemplate($view, $data, $preview, $variables)` é a entrada independente de painel. O PDF em si continua a cargo do exportador da aplicação.
-
-A impressão pode aguardar `window.canvasReady === true`. Se o template executar trabalho assíncrono, atribua sua Promise a `window.canvasTemplateReady`: o pacote aguarda essa Promise, fontes e imagens antes de sinalizar conclusão.
-
-As definições escolhidas pela página também são utilizadas durante a persistência e a renderização, sem alterar os padrões de outras páginas. Em jobs/importações que manipulam os models diretamente, use o store da página ou `usingElements()` para aplicar a mesma configuração; alternativamente, mantenha os tipos compartilhados em `canvasElementRegistry()` / `filament-canvas.elements`. Não é preciso repetir classes em um adaptador de salvamento.
-
-## Estado do elemento
-
-O envelope continua sendo `{type, data}`. A identidade, geometria, visibilidade e referências de mídia ficam fora das propriedades específicas do tipo. Todas as propriedades específicas ficam em **um único objeto plano `dados`**:
-
-```json
-{
-  "type": "text",
-  "data": {
-    "id": 42,
-    "nome": "Legenda",
-    "x_pt": 30,
-    "y_pt": 40,
-    "largura_pt": 200,
-    "altura_pt": 50,
-    "rotacao_graus": 0,
-    "visivel": true,
-    "dados": {
-      "text": "Meu documento",
-      "font_size": 12,
-      "color": "#222222",
-      "align": "left"
-    }
-  }
-}
-```
-
-Estruturas intrinsecamente compostas continuam sendo objetos ou listas dentro de `dados`: documento `rich_text`, transformação `image_transform`, traço `drawing`, colunas e linhas da tabela. Não existem grupos separados de conteúdo, estilo e configurações. A organização visual do formulário não determina o formato do JSON.
-
-`Support\ElementData::from($data)` lê o novo objeto e aceita o formato anterior: configurações, depois conteúdo, depois valores não vazios do estilo. `canonicalizeBlock()`/`canonicalizeBlocks()` convertem o envelope e removem os três grupos anteriores, preservando geometria e referências. Um `dados` já existente é sempre a fonte autoritativa, inclusive quando está vazio. A persistência salva apenas o formato canônico.
-
-Cada classe declara suas regras. O núcleo valida geometria e rejeita propriedades novas ou alteradas de `dados` que não estejam declaradas no tipo. Propriedades legadas já persistidas podem continuar se estiverem inalteradas. A aplicação valida também seus vínculos, permissões e regras de negócio.
-
-## Uma classe por tipo
-
-Os tipos genéricos incluídos são:
-
-| Classe | Tipo | Recursos |
-|---|---|---|
-| `TextElement` | `text` | RichEditor, tipografia e edição direta |
-| `TitleElement` | `title` | Texto com valores iniciais de título |
-| `ImageElement` | `asset` | Enquadramento, espelhamento, opacidade e mídias |
-| `DrawingElement` | `drawing` | Linhas contínuas, tracejadas e pontilhadas |
-| `DataTableElement` | `data-table` | Colunas e linhas editáveis |
-
-Os aliases `image`, `photo` e `table` permanecem compatíveis com documentos anteriores, mas ficam ocultos na toolbar genérica. A aplicação pode substituí-los por classes próprias e ativar sua toolbar. Na AK, título de catálogo, imagem de produto, texto vinculado, tabela de produtos e grade pertencem ao projeto principal; podem estender as classes genéricas.
-
-A tabela genérica oferece um formulário para os títulos das colunas e outro para as linhas, com campos de célula identificados pelos títulos. As chaves das colunas são internas, geradas pelo schema e preservadas ao renomear ou reordenar. O JSON continua em `dados.columns` (`label`, `field`) e `dados.rows` (valores por chave). O cabeçalho e as bordas possuem estilo básico na própria view, inclusive sem um template específico. Para apresentações próprias, estenda `DataTableElement` e substitua `view()` e, se necessário, `properties()`; a prévia respeita a view da classe. Tabelas ligadas a produtos continuam na aplicação.
-
-Estenda `Elements\CanvasElement`:
-
-```php
 use EduardoRibeiroDev\FilamentCanvas\Elements\CanvasElement;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
 
-class BadgeElement extends CanvasElement
+class Notice extends CanvasElement
 {
-    public function type(): string { return 'badge'; }
+    public function type(): string
+    {
+        return 'notice';
+    }
 
-    public function label(): string { return 'Selo'; }
+    public function getLabel(): string
+    {
+        return 'Notice';
+    }
 
-    public function icon(): string { return 'heroicon-o-tag'; }
-
-    public function properties(Schema $schema): Schema
+    public function form(Schema $schema): Schema
     {
         return $schema->components([
-            TextInput::make('text')->label('Texto')->default('Novo selo')->required()->rules(['string'])->maxLength(255),
-            Toggle::make('highlighted')->label('Destacar')->default(true),
+            TextInput::make('caption')
+                ->required()
+                ->rules(['string'])
+                ->maxLength(255)
+                ->default('New notice'),
         ]);
     }
 
-    public function view(): string { return 'canvas.elements.badge'; }
+    public function view(): string
+    {
+        return 'canvas.elements.notice';
+    }
 }
 ```
 
-Os nomes dos campos e das regras são relativos a `dados`; o editor adiciona o caminho de estado do elemento selecionado. **Não há método `defaults()`**: na criação, o editor preenche e desidrata o schema Filament para avaliar os valores iniciais dos próprios campos. Na edição, carrega os valores existentes, preservando `false`, `0` e `null`.
-
-O painel mantém os campos em estado local diferido; somente o fluxo de atualização do canvas sincroniza e valida as propriedades, evitando requisições live concorrentes.
-
-O pacote extrai as regras dos próprios campos Filament com `Support\ElementValidation`: obrigatoriedade, limites, opções e regras customizadas também são aplicados no salvamento e nos models, sem hidratar ou substituir os valores do payload. Aplicações que importam documentos podem usar `ElementValidation::rules($element, $dados, $prefix)` ou `ElementValidation::validate($element, $dados)` para a mesma validação. Campos ocultos conservam a validação dos valores fornecidos, sem exigir preenchimento. `validationRules()` é opcional nas subclasses de `CanvasElement` e acrescenta somente regras para propriedades internas ou de compatibilidade que não possuem um campo no formulário.
-
-A view recebe `$dados`, `$context`, `$media` e `$block` (envelope completo, incluindo geometria):
+The generated Blade view contains a styled container and `x-text="data.caption"`. You can replace its layout while keeping the same binding:
 
 ```blade
-<div style="font-weight:{{ ($dados['highlighted'] ?? false) ? 700 : 400 }}">
-    {{ $dados['text'] ?? '' }}
+<div style="width:100%;height:100%;padding:12px;box-sizing:border-box;font:16px/1.4 Arial,sans-serif">
+    <span x-text="data.caption"></span>
 </div>
 ```
 
-O canvas cuida da posição e dos controles de seleção. A view produz apenas o conteúdo interno e deve escapar dados com `{{ }}`. O método opcional `viewData(array $dados, EditorContext $context, array $media = []): array` acrescenta dados resolvidos pela aplicação sem copiá-los para o JSON. `normalize(array $dados): array` pode normalizar valores e gerar propriedades derivadas.
+The base class provides an icon. Register the class using one of the options below, then add it from the editor toolbar.
 
-Publique a configuração com `php artisan vendor:publish --tag=filament-canvas-config` e registre tipos personalizados em `config/filament-canvas.php`:
+![Command-generated Notice element connected to its Caption field](docs/images/custom-element.png)
+
+**Inheriting a built-in element:**
+
+Choosing a built-in type preserves its form, icon, media settings and editing tools. The generated class overrides only its identity and view. For example, choosing **Text** for `QuoteElement` generates:
 
 ```php
-'elements' => [\App\Canvas\Elements\BadgeElement::class],
+namespace App\Canvas\Elements;
+
+use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
+
+class QuoteElement extends TextElement
+{
+    public function type(): string
+    {
+        return 'quote';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Quote';
+    }
+
+    public function view(): string
+    {
+        return 'canvas.elements.quote';
+    }
+}
 ```
 
-Essa lista é compartilhada pelo painel e pelo model, inclusive em jobs e comandos sem painel ativo. O container Laravel resolve cada classe. Para registros específicos de um documento, você pode usar `->element()`/`->registerElements()` no painel e sobrescrever `canvasElementRegistry()` no proprietário com o mesmo registro. A AK usa essa opção para suas classes comerciais.
+Its generated view reuses the built-in markup, which you can customize:
 
-`documentElements('document', ['title', 'text', 'badge'])` é opcional e restringe os tipos exibidos e aceitos pelo editor daquele documento. O registro do proprietário deve admitir os mesmos tipos. O registro fornece nome, ícone, formulário e view; tipos próprios funcionam por atualização Livewire sem exigir um renderer JavaScript. As views genéricas têm atualização local otimizada; ao substituir `view()`, o editor usa o HTML daquela classe.
+```blade
+@include('filament-canvas::elements.text')
+```
 
-`capabilities(): array` declara comportamentos locais opcionais, por exemplo `['text' => true, 'inline_text' => true]` ou `['image' => true]`. O comportamento local não depende de `instanceof ImageElement`. Use `toolbar => false` para um tipo somente de compatibilidade. Uma classe da aplicação que substitui `photo`/`table` pode declarar `toolbar => true`.
+The inherited form and inline rich text editor work immediately. To choose the parent without a prompt:
 
-Para personalizar apenas o campo de texto, `TextElement` oferece `protected textField(): RichEditor`. Também é possível compor o schema de `parent::properties($schema)` e adicionar campos. Cada propriedade persistida deve ter um campo no schema ou uma regra complementar quando for uma estrutura interna sem controles visíveis.
+```bash
+php artisan make:canvas-element QuoteElement --extends=text
+```
 
-### Texto formatado
+`--extends` accepts `none`, `title`, `text`, `image`, `drawing` and `data-table`. With `--no-interaction` and no `--extends` option, the command generates a generic element.
 
-`dados.rich_text` contém o documento Tiptap autoritativo. O servidor gera `dados.html` sanitizado e `dados.text` como derivados; ambos são recompostos quando o documento muda. `Support\RichText` limita a estrutura e fornece HTML/CSS compartilhados pela prévia e impressão. Texto simples com apenas `dados.text` continua válido.
+**Nested elements:**
 
-O RichEditor aceita negrito parcial, itálico, sublinhado, tachado, marcação, cores, links e listas. Duplo clique abre o RichEditor nativo diretamente na prancheta. Selecionar um trecho exibe a barra flutuante com formatação, alinhamento, listas, cores e links. Os modais de cor e link preservam a edição e devolvem o foco ao texto. Clicar fora ou Ctrl/Cmd + Enter confirma; Esc cancela. O JSON Tiptap é preservado, incluindo formatação parcial; alinhamento, negrito e itálico ficam no RichEditor, sem campos globais duplicados. Textos antigos são convertidos para marcas e atributos do documento ao carregar ou salvar. Os controles flutuantes mantêm seu tamanho durante o zoom. A alteração entra no histórico local.
+```bash
+php artisan make:canvas-element Marketing/PromoCardElement
+```
 
-### Mídias
+This creates `App\Canvas\Elements\Marketing\PromoCardElement`, with type `marketing-promo-card` and view `canvas.elements.marketing.promo-card`. The final `Element` suffix is omitted from the type and view name; the PHP class name keeps the suffix and uses PascalCase. The command also accepts fully qualified names within your application's `Canvas\Elements` namespace and respects a custom application namespace.
 
-Uma classe pode implementar `Contracts\HasElementMedia`; `ImageElement` já implementa:
+Existing class or view files stop generation before either file is changed. To deliberately replace both files:
+
+```bash
+php artisan make:canvas-element Notice --force
+```
+
+The command prints the registration instruction; it does not edit your configuration or panel provider.
+
+### Registering Elements
+
+For availability throughout your application, add the class to the published configuration:
+
+```php
+// config/filament-canvas.php
+'elements' => [
+    App\Canvas\Elements\Notice::class,
+],
+```
+
+You can also add an element at panel level:
+
+```php
+CanvasPlugin::make()
+    ->extraElements([\App\Canvas\Elements\Notice::class]);
+```
+
+To configure one resource editor page:
+
+```php
+protected static ?array $canvasExtraElements = [Notice::class];
+```
+
+Or an embedded editor:
+
+```php
+Canvas::make()
+    ->record(fn (Document $record) => $record)
+    ->extraElements([Notice::class]);
+```
+
+Use `elements([...])`, or the page's `$canvasElements`, to replace the available classes instead of adding to the defaults. Give each element a unique, stable `type()`, since saved compositions use it to identify the class.
+
+If you override the owner's `canvasElementRegistry()`, include your custom classes there as well. Model saves and background jobs use the owner's registry outside the editor. Global configuration is the simplest way to share registrations when using the default `HasCanvas` implementation.
+
+### Forms and Reactive Views
+
+A field path is relative to the selected element's properties. `TextInput::make('caption')` reads and writes `data.properties.caption` on the stored block. In the element view, that value is available directly as the Alpine expression `data.caption`.
+
+1. The editor loads the selected element's `form()` in the attributes panel.
+2. Field changes update that element's local state.
+3. Alpine bindings update its view using that state.
+4. **Save composition** validates the native form rules and persists the composition.
+
+No PHP variables need to be passed to an element view. Blade supplies the reusable markup; Alpine supplies the changing values. Each element instance gets its own `data` scope. Document metadata supplied by `canvasMetadata()` is available in that scope in both the editor and standalone output. Element properties take precedence. Metadata is transient and is not saved in the element properties.
+
+Keep presentation calculations in the element's Blade view using CSS, Alpine getters and `x-data`. The same view runs in the editor and exported document, so it needs no separate display adapter. Native Repeaters can manage item lists in `form()`.
+
+Custom text or image views can mark their displayed content with `data-canvas-text` or `data-canvas-image`. This lets the package's inline text and crop tools read the content shown by the view.
+
+```blade
+<span x-text="data.caption"></span>
+
+<div :style="{ color: data.color, fontSize: data.font_size + 'px' }">
+    <span x-text="data.caption"></span>
+</div>
+
+<template x-for="(item, index) in (data.items ?? [])" :key="index">
+    <span x-text="item.label"></span>
+</template>
+```
+
+Declare `color`, `font_size` and `items` in `form()` before using them in your own element. Defaults initialize new elements. Use native field rules such as `required()`, `maxLength()`, `numeric()` and `rules()` for validation.
+
+Use `x-text` for plain strings. Use `x-html` only with sanitized HTML, such as the built-in text element's prepared rich text. Avoid `{{ $caption }}` or `@foreach` for changing element values, since those run when the template is compiled.
+
+Visual updates do not require a rendering request for each change. Selecting an element can load its form, fields with server-dependent behavior can make Livewire requests, and saving or uploading still uses the server.
+
+### Extending Built-in Elements
+
+Extend a built-in class when your element needs its existing behavior. For example, a custom text element inherits rich text and double-click inline editing:
+
+```php
+use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
+
+class QuoteElement extends TextElement
+{
+    public function type(): string
+    {
+        return 'quote';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Quote';
+    }
+}
+```
+
+You can override `view()` or extend `form()` to add fields. Extending `CanvasElement` gives you a generic element; using a text field alone does not enable inline rich text editing. `ImageElement` and `DrawingElement` similarly provide their respective editing tools through inheritance.
+
+## User Interactions
+
+- Use the toolbar to insert an element, then drag it or use the resize and rotation handles.
+- Edit content and appearance in **Properties**. Position and dimensions are managed separately from element properties.
+- Double-click a text element to edit it in place. Use the floating toolbar for formatting.
+- Open **Layers** to select and reorder elements. Visibility and duplication are available in the attributes panel.
+- Use the grid, snapping controls, zoom and **Fit to screen** to work at different scales.
+- Use the undo and redo buttons, or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` while the canvas has focus.
+- Click **Save composition** to persist changes. Unsaved changes remain local to the editor.
+
+![Inline rich text editing with the native formatting toolbar](docs/images/text-editing.png)
+
+## Advanced Features
+
+### Media Collections
+
+`ImageElement` already declares an `image` collection with `image_id` as its reference field. Custom elements can declare collections through `mediaCollections()`:
 
 ```php
 public function mediaCollections(): array
 {
-    return ['image' => [
-        'label' => 'Imagem',
-        'accepted_mime_types' => ['image/png', 'image/jpeg', 'image/webp'],
-        'max_files' => 1,
-        'max_size' => 10240, // KB
-        'reference_field' => 'imagem_origem',
-    ]];
+    return [
+        'image' => [
+            'label' => 'Image',
+            'accepted_mime_types' => ['image/png', 'image/jpeg', 'image/webp'],
+            'max_files' => 1,
+            'max_size' => 10240, // Kilobytes.
+            'reference_field' => 'image_id',
+        ],
+    ];
 }
-
-public function withAssetLibrary(AssetLibrary $library): static;
-public function resolveMedia(array $block, EditorContext $context): array;
 ```
 
-A declaração descreve coleções e seus limites; a implementação resolve mídias autorizadas no contexto atual. O editor injeta a biblioteca do documento antes de renderizar. `withAssetLibrary()` retorna a instância a usar, permitindo clones sem contaminar o estado de outros documentos. Uma implementação própria pode declarar coleções adicionais e resolvê-las para sua view. `ImageElement::resolveMedia()` percorre essas declarações: uma coleção de arquivo único recebe um asset e uma coleção múltipla recebe uma lista, sempre limitada às mídias da biblioteca autorizada. O validador aplica os limites de referências declarados. O model Eloquent padrão usa Spatie Media Library. Um `DocumentStore` próprio pode usar outro armazenamento.
+The media library validates file access and references before saving. Uploads use the owning document by default, so it must implement Spatie's `HasMedia` contract. Private media uses signed, authenticated file URLs.
 
-A biblioteca implementa `AssetLibrary::assets(EditorContext): array` e devolve `[['id' => 1, 'name' => 'Logo', 'image' => '/media/logo.webp']]`, contendo apenas assets autorizados. A imagem genérica guarda `imagem_origem` fora de `dados`; `image_transform`, `fit`, `crop_x/y` e `flip_x/y` ficam em `dados`.
+Collections can customize `disk`, `query`, `authorize`, `upload_owner` and `upload_collection`. Use these when media belongs to a different model or needs application-specific access rules. The package prepares browser or output URLs from the saved media references; element views bind to the resulting data.
 
-Para upload, implemente `UploadableAssetLibrary::upload(EditorContext, UploadedFile): array`. Autorize e armazene o arquivo no domínio hospedeiro; devolva os mesmos dados de uma imagem da biblioteca. As coleções definem os tipos aceitos, limite de arquivos e tamanho máximo; o padrão genérico oferece PNG/JPEG/WebP até 10 MB. Cada coleção recebe seu próprio seletor e formulário de upload; coleções com `max_files > 1` guardam uma lista de IDs na referência declarada. O upload adiciona uma mídia à biblioteca; salvar a composição continua usando a revisão do documento.
+### Page Templates and Output
 
-## Persistência Eloquent
-
-`Models\CanvasElement` pertence ao pacote e usa `elementable(): MorphTo`. O trait `HasCanvas` acrescenta `canvasElements(): MorphMany` ao proprietário. A tabela `canvas_elements` contém identidade, tipo, geometria, camada, visibilidade, um JSON `dados` e timestamps. O proprietário pode ser uma página de catálogo, documento, apresentação ou outro model.
-
-`Persistence\EloquentDocumentStore` e `ElementPersistence` carregam, validam, criam, ordenam, atualizam e removem os elementos. O salvamento trava o proprietário, compara a revisão, rejeita IDs alheios/duplicados e executa tudo em transação. Remoções usam eventos dos models. Excluir o proprietário por Eloquent também exclui seus elementos e mídias; deletes em massa por query/SQL não disparam esses eventos.
-
-Os métodos do proprietário permitem adaptar regras locais:
-
-- `canvasSize()`: largura e altura em pontos; padrão A4 de `filament-canvas.width`/`height`.
-- `assertCanvasEditable()`: bloqueios comerciais, por exemplo impedir edição de uma publicação; padrão sem bloqueio adicional às policies.
-- `canvasMetadata()`: dados necessários pela interface ou pelas views; padrão vazio.
-- `canvasElementRegistry()`: tipos compartilhados pelo model e pelo editor; A página combina as definições do proprietário com os padrões; uma lista explícita na página/painel controla os tipos disponíveis. Use `ElementRegistry::from([TextElement::class, BadgeElement::class])` para uma lista própria.
-- `canvasElementModel()`: subclasse de `Models\CanvasElement` quando existem relações próprias da aplicação.
-
-Uma subclasse pode estender `canvasData()` e `syncCanvasData(array $data, ?EditorContext $context)` para carregar/salvar vínculos comerciais. O núcleo continua cuidando da tabela, geometria, `dados`, ordenação e revisão. A AK mantém `App\Models\CatalogoElemento` somente para produtos, regras editoriais e compatibilidade das identidades de mídia existentes.
-
-O model genérico implementa `HasMedia`, registra as coleções declaradas pelo tipo e sincroniza referências no salvamento. Só aceita mídias que pertençam ao mesmo proprietário ou aos seus elementos. A coleção `image` é armazenada como `imagem` para compatibilidade. `filament-canvas.media_disk` define o disco de destino. A tabela `media` e os discos devem estar configurados pela aplicação; instale/publique as migrations da Media Library quando ainda não existirem.
-
-A biblioteca visual e o upload continuam substituíveis por `AssetLibrary`/`UploadableAssetLibrary`: configure `->assetLibrary('document', MyAssetLibrary::class)` para fornecer arquivos autorizados do domínio. A biblioteca padrão é vazia. Declarações de coleções não criam uma biblioteca de uploads automaticamente.
-
-## Persistência alternativa e renderização
-
-`Data\DocumentReference` identifica tipo e ID; `Data\EditorContext` traz usuário autenticado e painel. `Data\CanvasDocument` contém `blocks`, `width`, `height`, `revision` e `metadata`. `SaveResult` devolve os blocos persistidos e a nova revisão.
+Select the page layout on the plugin, editor page or embedded editor:
 
 ```php
-interface DocumentStore
-{
-    public function authorize(EditorContext $context, string $ability): void;
-    public function load(EditorContext $context): CanvasDocument;
-    public function save(EditorContext $context, array $blocks, string $expectedRevision): SaveResult;
-}
+CanvasPlugin::make()->template('canvas.page');
 ```
 
-Para armazenamento alternativo, registre `->documentStore('document', MyDocumentStore::class)`. Esse adaptador deve autorizar `view`, `preview` e `update`, comparar revisão e gravar na mesma transação ou trava. No caminho Eloquent, `preview` usa a policy `update`, pois é uma operação do editor. Toda chamada do editor autoriza novamente. O editor bloqueia tipo de documento, ID, painel e revisão e recebe as opções do Schema em uma configuração autenticada e vinculada ao documento/painel; o cliente não pode escolher classes PHP.
-
-`Examples\JsonDocumentStore` é um exemplo opcional em arquivos locais, com trava, conversão legada e rejeição de revisões antigas. Defina uma Gate `canvas-document` que decida acesso pelo usuário antes de utilizá-lo.
-
-`Rendering\CanvasRenderer` usa as views dos tipos, injeta mídias e envolve o conteúdo com geometria. As integrações legadas com `Canvas::document()` ainda aceitam `->previewRenderer('document', MyPreviewRenderer::class)`, cujo contrato é `render(CanvasDocument, EditorContext): string`. A página pronta baseada em Resource usa o renderer de templates do pacote. Um renderer próprio deve produzir `.page` e `.block[data-editor-index]` e escapar conteúdo. A prévia usa pt e `body { zoom: .75 }` para representar 1 pt como 1 px na prancheta.
-
-### Interface da aplicação
-
-`->editorView('canvas.my-editor')` troca a interface externa. A view recebe `initial`, `assets`, `width`, `height`, `previewHtml`, `elementLabels`, `elementTypes`, `elementDefinitions`, `metadata` e `canUploadAssets`. O schema dinâmico de propriedades está em `$this->propertiesForm`.
-
-`metadata.toolbarView`/`propertiesView` podem incluir controles específicos da aplicação. `metadata.reference_options` aceita `{id,label,image}` para referências autorizadas do domínio. A extensão JavaScript pode acrescentar comportamentos a esses controles; nenhuma regra de produto pertence ao núcleo.
-
-Importe o bundle distribuído pelo Composer para não depender do `node_modules` do pacote na aplicação. A factory ESM permite uma extensão opcional que preserva os descriptors:
-
-```js
-import createCanvas from '../../vendor/eduardoribeirodev/filament-canvas/resources/dist/canvas.js'
-
-export default (initial, assets, width, height, previewHtml) =>
-    createCanvas(initial, assets, width, height, previewHtml, {
-        labels: {badge: 'Selo'},
-        elementTypes: {badge: {icon: 'heroicon-o-tag'}},
-        extension(core) { return { /* comportamento específico */ } },
-    })
+```php
+protected static ?string $canvasTemplate = 'canvas.page';
 ```
 
-## Desenvolvimento
+```php
+Canvas::make()
+    ->record(fn (Document $record) => $record)
+    ->template('canvas.page');
+```
+
+A page template receives the positioned `$blocks`, document `$data`, `$width`, `$height` and `$preview`. Start with the [default page template](resources/views/templates/blank.blade.php), preserving its positioning and element styles. To reuse it from your own view:
+
+```blade
+{{-- resources/views/canvas/page.blade.php --}}
+@include('filament-canvas::templates.blank')
+```
+
+Copy the default template's markup and styles into your view when you want to change the layout. Page templates use PHP for document-level layout; element views use Alpine for their changing values. An owner can implement `Contracts\CanvasRenderData` to supply additional page data through `canvasRenderData(CanvasDocument $document, EditorContext $context): array`.
+
+For standalone output, models using `HasCanvas` can render their saved canvas directly:
+
+```php
+$html = $record->renderCanvas();
+
+// Override the page template for this render.
+$html = $record->renderCanvas('canvas.page');
+
+// Use an explicit user, for example in a queued job.
+$html = $record->renderCanvas(user: $user);
+```
+
+The method loads the saved document and checks the `view` and `update` policies. It uses the current authenticated user unless one is supplied. Model template and element settings apply both within and outside a Filament panel. Unspecified settings inherit panel or package defaults. Templates and elements configured only on an editor page or schema component are not automatically inherited. The model must already be saved. The older store and context APIs remain available for custom storage integrations; ordinary Eloquent usage goes through the model methods.
+
+Standalone HTML includes Alpine and the prepared element values. If a Chromium-based exporter prints the HTML, wait until `window.canvasReady === true`; inspect `window.canvasError` if preparation fails. PDF generation itself belongs to your application.
+
+### Translations
+
+The editor follows Laravel's current locale. Included locales are `de`, `en`, `es`, `fr`, `it`, `pt_BR` and `pt_PT`, covering element forms, toolbar labels, media controls, help text and editor messages.
+
+```php
+app()->setLocale('pt_BR');
+```
+
+To customize the translations, publish the language files:
 
 ```bash
-npm run build
-npm test
+php artisan vendor:publish --tag=filament-canvas-translations
 ```
 
-Execute `npm ci` antes de compilar. O build empacota o editor em `resources/dist/canvas.js` e os estilos em `resources/dist/editor.css`. O zoom usa os assets do Slider já fornecidos pelo Filament, sem dependência adicional de noUiSlider no pacote. Inclua o dist no release Composer e execute `php artisan filament:assets` na aplicação após alterar o módulo ou os estilos.
+Edit `lang/vendor/filament-canvas/{locale}/canvas.php` in your application. Custom elements should translate their own labels using Laravel's `__()` helper. Saved user content and custom collection labels are preserved as supplied by the application.
+
+### Custom Storage
+
+Implement `Contracts\DocumentStore` when documents live outside the default Eloquent relation. The contract defines `authorize()`, `load()` and `save()`; saving must compare the expected revision and persist changes atomically.
+
+```php
+CanvasPlugin::make()
+    ->documentStore('presentation', PresentationStore::class);
+```
+
+Then use `Canvas::make()->document('presentation', $id)` in a schema. See [JsonDocumentStore](src/Examples/JsonDocumentStore.php) for a file-based example that uses a lock and revision checking. It requires an application-defined `canvas-document` authorization gate.
+
+## Data Structure
+
+A composition is an ordered array of blocks. For the generated Notice element:
+
+```php
+[
+    'type' => 'notice',
+    'data' => [
+        'name' => 'Notice',
+        'x_pt' => 20,
+        'y_pt' => 30,
+        'width_pt' => 240,
+        'height_pt' => 50,
+        'rotation_deg' => 0,
+        'visible' => true,
+        'properties' => [
+            'caption' => 'New notice',
+        ],
+    ],
+]
+```
+
+- `type` identifies the registered element class.
+- `data` contains its name, geometry, visibility and optional media references.
+- `data.properties` contains the values declared by its form.
+- Array order defines the layer order. Persistence adds the element ID and layer index.
+
+Geometry uses points, displayed as one CSS pixel per point before editor zoom. Image references such as `image_id` belong to the outer `data` envelope. Text elements store the native RichEditor document in `properties.rich_text`; their HTML and plain text are derived output values.
+
+The view's Alpine `data` scope contains the flattened properties plus prepared values such as `type`, `geometry` and `media`. It is the display state for one element, rather than the stored block envelope.
+
+## Method Reference
+
+### Element Methods
+
+| Method | Purpose |
+| --- | --- |
+| `type(): string` | Stable identifier used in saved blocks. Required. |
+| `getLabel()` | Display name in the toolbar and attributes panel. Required. |
+| `view(): string` | Name of the reactive Blade view. Required. |
+| `form(Schema $schema): Schema` | Native attribute fields, defaults and validation. Empty by default. |
+| `getIcon()` | Toolbar icon. The base class provides a default. |
+| `showInToolbar(): bool` | Whether users can insert the type from the toolbar. Defaults to `true`. |
+| `mediaCollections(): array` | Media policies and reference fields. Empty by default. |
+| `normalize(array $properties): array` | Optional derivation of stored output values. Returns properties unchanged by default. |
+
+A typical custom element needs only `type()`, `getLabel()`, `form()` and `view()`.
+
+### Editor Configuration
+
+| Scope | Add elements | Replace elements | Page layout | Editor interface |
+| --- | --- | --- | --- | --- |
+| Panel plugin | `extraElements([...])` | `elements([...])` | `template('view')` | `editorView('view')` |
+| Resource page | `$canvasExtraElements` | `$canvasElements` | `$canvasTemplate` | `$canvasEditorView` |
+| Schema component | `extraElements([...])` | `elements([...])` | `template('view')` | `editorView('view')` |
+
+## Development
+
+```bash
+composer install
+npm ci
+npm run build
+npm test
+vendor/bin/phpunit
+```
+
+Vite builds JavaScript and editor CSS to `resources/dist`, preserving `canvas.js` as an ES module and `document.js` as a standalone IIFE bundle. Run `php artisan filament:assets` in the consuming application after rebuilding package assets.
+
+Documentation screenshots are real captures of the editor using isolated sample content. The custom-element screenshot uses the files generated by `make:canvas-element Notice`.
+
+## License
+
+The MIT License (MIT). See [LICENSE](LICENSE) for details.
+
+## Credits
+
+- Built for [Filament](https://filamentphp.com)
+- Created by [Eduardo Ribeiro](https://github.com/eduardoribeirodev)
+
+## Support
+
+For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/eduardoribeirodev/filament-canvas). Don't forget, Jesus loves you ❤️.

@@ -1,0 +1,23 @@
+<?php
+
+namespace {{ namespace }};
+
+use EduardoRibeiroDev\FilamentCanvas\Elements\{{ parent_import }};
+
+class {{ class }} extends {{ parent_class }}
+{
+    public function type(): string
+    {
+        return '{{ type }}';
+    }
+
+    public function getLabel(): string
+    {
+        return '{{ label }}';
+    }
+
+    public function view(): string
+    {
+        return '{{ view }}';
+    }
+}

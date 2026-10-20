@@ -1,0 +1,36 @@
+<?php
+
+namespace {{ namespace }};
+
+use EduardoRibeiroDev\FilamentCanvas\Elements\CanvasElement;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Schema;
+
+class {{ class }} extends CanvasElement
+{
+    public function type(): string
+    {
+        return '{{ type }}';
+    }
+
+    public function getLabel(): string
+    {
+        return '{{ label }}';
+    }
+
+    public function form(Schema $schema): Schema
+    {
+        return $schema->components([
+            TextInput::make('caption')
+                ->required()
+                ->rules(['string'])
+                ->maxLength(255)
+                ->default('{{ caption }}'),
+        ]);
+    }
+
+    public function view(): string
+    {
+        return '{{ view }}';
+    }
+}

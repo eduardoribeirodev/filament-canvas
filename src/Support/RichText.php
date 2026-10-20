@@ -2,8 +2,6 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Support;
 
-use DOMDocument;
-use DOMElement;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -23,7 +21,7 @@ final class RichText
     /** JSON is authoritative; HTML is an output cache, never trusted verbatim. */
     public static function normalize(array $content): array
     {
-        if (! isset($content['rich_text']) && ! array_key_exists('html', $content)) {
+        if (! isset($content['rich_text'])) {
             return $content;
         }
 
@@ -33,156 +31,29 @@ final class RichText
         $content['html'] = $renderer->toHtml();
         $content['text'] = self::plainText($document);
         if (mb_strlen($content['text']) > self::MAX_TEXT) {
-            self::invalid('O texto excede o limite permitido.');
+            self::invalid(__('filament-canvas::canvas.text_limit'));
         }
 
         return $content;
     }
 
-    public static function normalizeBlocks(array $blocks): array
-    {
-        $blocks = ElementData::canonicalizeBlocks($blocks);
-        foreach ($blocks as $index => $block) {
-            if (is_array($block['data']['dados'] ?? null) && (isset($block['data']['dados']['rich_text']) || array_key_exists('html', $block['data']['dados']))) {
-                $blocks[$index]['data']['dados'] = self::normalize($block['data']['dados']);
-            }
-        }
-
-        return $blocks;
-    }
-
-    /** Move old element-wide formatting into the editor document once. */
-    public static function migrateTypography(array $content, bool $title = false): array
-    {
-        $hasFormatting = self::hasFormatting($content);
-        $legacy = array_intersect_key($content, array_flip(['align', 'bold', 'italic']));
-        if (! $hasFormatting && ! $legacy && ! $title && ! array_key_exists('text', $content)) {
-            return $content;
-        }
-
-        // Imports sometimes encoded booleans as the strings "true" and "false".
-        foreach (['bold', 'italic'] as $key) {
-            if (in_array($content[$key] ?? null, ['true', 'false'], true)) {
-                $content[$key] = $content[$key] === 'true';
-            }
-        }
-
-        $marks = [];
-        foreach (['bold', 'italic'] as $key) {
-            $value = $content[$key] ?? ($key === 'bold' && $title && ! $hasFormatting);
-            if (in_array($value, [true, 1, '1'], true)) {
-                $marks[] = $key;
-            }
-        }
-        $align = match ($content['align'] ?? null) {
-            'left' => 'start', 'right' => 'end', 'center', 'justify' => $content['align'], default => null,
-        };
-        if (! $hasFormatting && ! array_key_exists('align', $content)) {
-            $align = 'center'; // Old plain canvas blocks inherited centered alignment.
-        }
-        $document = self::inheritTypography(self::document($content), $marks, $align);
-        $content['rich_text'] = $document;
-
-        // Invalid legacy values stay present so validation can report them.
-        if ($align !== null || (($content['align'] ?? null) === null)) {
-            unset($content['align']);
-        }
-        foreach (['bold', 'italic'] as $key) {
-            if (! isset($content[$key]) || in_array($content[$key], [true, false, 0, 1, '0', '1'], true)) {
-                unset($content[$key]);
-            }
-        }
-
-        return self::normalize($content);
-    }
-
-    private static function inheritTypography(array $node, array $marks, ?string $align): array
-    {
-        if (($node['type'] ?? null) === 'text') {
-            $existing = array_column($node['marks'] ?? [], 'type');
-            foreach ($marks as $mark) {
-                if (! in_array($mark, $existing, true)) {
-                    $node['marks'][] = ['type' => $mark];
-                }
-            }
-        }
-        if ($align !== null && in_array($node['type'] ?? null, ['paragraph', 'heading'], true) && ! isset($node['attrs']['textAlign'])) {
-            $node['attrs']['textAlign'] = $align;
-        }
-        if (isset($node['content'])) {
-            $node['content'] = array_map(fn (array $child) => self::inheritTypography($child, $marks, $align), $node['content']);
-        }
-
-        return $node;
-    }
-
-    /** Also seeds the RichEditor from legacy plain text without changing stored data. */
     public static function document(array $content): array
     {
-        if (isset($content['rich_text'])) {
-            if (! is_array($content['rich_text'])) {
-                self::invalid('Documento de texto inválido.');
-            }
-
-            return self::normalizeDocument($content['rich_text']);
-        }
-        if (array_key_exists('html', $content)) {
-            if (! is_string($content['html']) || strlen($content['html']) > self::MAX_BYTES) {
-                self::invalid('O texto formatado excede o limite permitido.');
-            }
-            $html = self::prepareHtml(Str::sanitizeHtml($content['html']));
-
-            return self::normalizeDocument(self::renderer($html)->toArray() ?: ['type' => 'doc', 'content' => []]);
+        $document = $content['rich_text'] ?? ['type' => 'doc', 'content' => []];
+        if (! is_array($document)) {
+            self::invalid(__('filament-canvas::canvas.invalid_rich_text'));
         }
 
-        $text = $content['text'] ?? '';
-        if (! is_string($text) || mb_strlen($text) > self::MAX_TEXT) {
-            self::invalid('O texto excede o limite permitido.');
-        }
-        $nodes = [];
-        foreach (explode("\n", str_replace(["\r\n", "\r"], "\n", $text)) as $index => $line) {
-            if ($index) {
-                $nodes[] = ['type' => 'hardBreak'];
-            }
-            if ($line !== '') {
-                $nodes[] = ['type' => 'text', 'text' => $line];
-            }
-        }
-
-        return ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => $nodes]]];
+        return self::normalizeDocument($document);
     }
 
-    /** Legacy plain text remains escaped, including its original whitespace. */
     public static function html(array $content): string
     {
-        if (! isset($content['rich_text']) && ! array_key_exists('html', $content)) {
-            return e($content['text'] ?? '');
-        }
-
-        return self::renderer(self::document($content))->toHtml();
+        return isset($content['rich_text'])
+            ? self::renderer(self::document($content))->toHtml()
+            : e($content['text'] ?? '');
     }
 
-    public static function hasFormatting(array $content): bool
-    {
-        return isset($content['rich_text']) || array_key_exists('html', $content);
-    }
-
-    public static function rules(string $prefix = ''): array
-    {
-        return [
-            $prefix.'rich_text' => ['bail', 'nullable', 'array', function ($attribute, $value, $fail): void {
-                try {
-                    self::normalizeDocument($value);
-                } catch (ValidationException $exception) {
-                    $fail('Documento de texto inválido ou acima dos limites permitidos.');
-                }
-            }],
-            $prefix.'html' => ['nullable', 'string', 'max:'.self::MAX_BYTES],
-            $prefix.'text' => ['nullable', 'string', 'max:'.self::MAX_TEXT],
-        ];
-    }
-
-    /** Adjacent formatted spans must remain adjacent in the plain fallback. */
     private static function plainText(array $node): string
     {
         if (($node['type'] ?? null) === 'text') {
@@ -221,7 +92,7 @@ final class RichText
     private static function normalizeDocument(array $document): array
     {
         if (($document['type'] ?? null) !== 'doc' || strlen(json_encode($document, JSON_INVALID_UTF8_SUBSTITUTE) ?: '') > self::MAX_BYTES) {
-            self::invalid('Documento de texto inválido ou acima do limite permitido.');
+            self::invalid(__('filament-canvas::canvas.oversized_rich_text'));
         }
         $count = 0;
         $textLength = 0;
@@ -233,16 +104,16 @@ final class RichText
     {
         $type = $node['type'] ?? null;
         if ($depth > 20 || ++$count > 2000 || ! in_array($type, self::NODES, true) || ($type === 'doc' && $depth !== 0)) {
-            self::invalid('A estrutura do texto é inválida ou excede os limites permitidos.');
+            self::invalid(__('filament-canvas::canvas.invalid_text_structure'));
         }
         $result = ['type' => $type];
         $attrs = $node['attrs'] ?? [];
         if (! is_array($attrs)) {
-            self::invalid('Atributos de texto inválidos.');
+            self::invalid(__('filament-canvas::canvas.invalid_text_attributes'));
         }
         if (in_array($type, ['paragraph', 'heading'], true) && isset($attrs['textAlign'])) {
             if (! in_array($attrs['textAlign'], ['start', 'center', 'end', 'justify', 'left', 'right'], true)) {
-                self::invalid('Alinhamento de texto inválido.');
+                self::invalid(__('filament-canvas::canvas.invalid_alignment'));
             }
             $result['attrs']['textAlign'] = match ($attrs['textAlign']) {
                 'left' => 'start', 'right' => 'end', default => $attrs['textAlign'],
@@ -251,30 +122,30 @@ final class RichText
         if ($type === 'heading') {
             $level = $attrs['level'] ?? 2;
             if (! is_int($level) || $level < 1 || $level > 6) {
-                self::invalid('Nível de título inválido.');
+                self::invalid(__('filament-canvas::canvas.invalid_heading'));
             }
             $result['attrs']['level'] = $level;
         }
         if ($type === 'orderedList' && isset($attrs['start'])) {
             if (! is_int($attrs['start']) || $attrs['start'] < 1 || $attrs['start'] > 10000) {
-                self::invalid('Numeração da lista inválida.');
+                self::invalid(__('filament-canvas::canvas.invalid_numbering'));
             }
             $result['attrs']['start'] = $attrs['start'];
         }
         if ($type === 'text') {
             if (! is_string($node['text'] ?? null) || ($textLength += mb_strlen($node['text'])) > self::MAX_TEXT) {
-                self::invalid('O texto excede o limite permitido.');
+                self::invalid(__('filament-canvas::canvas.text_limit'));
             }
             $result['text'] = $node['text'];
         }
         if (isset($node['marks'])) {
             if (! is_array($node['marks']) || count($node['marks']) > 12) {
-                self::invalid('Formatação de texto inválida.');
+                self::invalid(__('filament-canvas::canvas.invalid_formatting'));
             }
             $result['marks'] = [];
             foreach ($node['marks'] as $mark) {
                 if (! is_array($mark)) {
-                    self::invalid('Formatação de texto inválida.');
+                    self::invalid(__('filament-canvas::canvas.invalid_formatting'));
                 }
                 if (($normalized = self::mark($mark)) !== null) {
                     $result['marks'][] = $normalized;
@@ -283,12 +154,12 @@ final class RichText
         }
         if (isset($node['content'])) {
             if (! is_array($node['content']) || ! array_is_list($node['content']) || in_array($type, ['text', 'hardBreak', 'horizontalRule'], true)) {
-                self::invalid('Conteúdo de texto inválido.');
+                self::invalid(__('filament-canvas::canvas.invalid_content'));
             }
             $result['content'] = [];
             foreach ($node['content'] as $child) {
                 if (! is_array($child)) {
-                    self::invalid('Conteúdo de texto inválido.');
+                    self::invalid(__('filament-canvas::canvas.invalid_content'));
                 }
                 $result['content'][] = self::node($child, $depth + 1, $count, $textLength);
             }
@@ -302,7 +173,7 @@ final class RichText
         $type = $mark['type'] ?? null;
         $attrs = $mark['attrs'] ?? [];
         if (! is_array($attrs)) {
-            self::invalid('Formatação de texto inválida.');
+            self::invalid(__('filament-canvas::canvas.invalid_formatting'));
         }
         if ($type === 'textStyle') {
             if (! isset($attrs['color'])) {
@@ -312,7 +183,7 @@ final class RichText
             $attrs = ['data-color' => $attrs['color']];
         }
         if (! in_array($type, self::MARKS, true)) {
-            self::invalid('Formatação de texto não suportada.');
+            self::invalid(__('filament-canvas::canvas.unsupported_formatting'));
         }
         $result = ['type' => $type];
         if ($type === 'link') {
@@ -336,39 +207,8 @@ final class RichText
     }
 
     /** Recognizes safe colored spans produced by direct canvas editing. */
-    private static function prepareHtml(string $html): string
-    {
-        if ($html === '') {
-            return '';
-        }
-        $dom = new DOMDocument;
-        $previous = libxml_use_internal_errors(true);
-        try {
-            $dom->loadHTML('<?xml encoding="utf-8" ?><body>'.$html.'</body>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
-            foreach ($dom->getElementsByTagName('span') as $span) {
-                if (! $span instanceof DOMElement) {
-                    continue;
-                }
-                if (preg_match('/(?:^|;)\s*color\s*:\s*([^;]+)/i', $span->getAttribute('style'), $match) && ($color = Str::sanitizeCssColor(trim($match[1])))) {
-                    $span->setAttribute('class', 'color');
-                    $span->setAttribute('data-color', $color);
-                }
-            }
-            $body = $dom->getElementsByTagName('body')->item(0);
-            $result = '';
-            foreach ($body?->childNodes ?? [] as $child) {
-                $result .= $dom->saveHTML($child);
-            }
-
-            return $result;
-        } finally {
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
-        }
-    }
-
     private static function invalid(string $message): never
     {
-        throw ValidationException::withMessages(['dados.rich_text' => $message]);
+        throw ValidationException::withMessages(['properties.rich_text' => $message]);
     }
 }

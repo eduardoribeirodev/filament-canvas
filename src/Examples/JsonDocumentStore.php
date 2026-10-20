@@ -6,7 +6,6 @@ use EduardoRibeiroDev\FilamentCanvas\Contracts\DocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Data\SaveResult;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Support\Facades\File;
 use Illuminate\Validation\ValidationException;
@@ -28,7 +27,7 @@ class JsonDocumentStore implements DocumentStore
     {
         $content = is_file($path) ? File::get($path) : null;
         $data = $content !== null ? json_decode($content, true, 512, JSON_THROW_ON_ERROR) : [];
-        $blocks = ElementData::canonicalizeBlocks($data['blocks'] ?? []);
+        $blocks = $data['blocks'] ?? [];
 
         return new CanvasDocument($blocks, (float) ($data['width'] ?? 595.28), (float) ($data['height'] ?? 841.89), self::revision($blocks));
     }
@@ -48,7 +47,6 @@ class JsonDocumentStore implements DocumentStore
     public function save(EditorContext $context, array $blocks, string $expectedRevision): SaveResult
     {
         $this->authorize($context, 'update');
-        $blocks = ElementData::canonicalizeBlocks($blocks);
         $path = $this->path($context);
         File::ensureDirectoryExists(dirname($path));
         $lock = fopen($path.'.lock', 'c');
@@ -58,7 +56,7 @@ class JsonDocumentStore implements DocumentStore
         try {
             $document = $this->read($path);
             if (! hash_equals($document->revision, $expectedRevision)) {
-                throw ValidationException::withMessages(['blocks' => 'A composição foi alterada em outra janela. Recarregue antes de continuar.']);
+                throw ValidationException::withMessages(['blocks' => __('filament-canvas::canvas.stale_document')]);
             }
             $payload = json_encode(['blocks' => $blocks, 'width' => $document->width, 'height' => $document->height], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT);
             File::replace($path, $payload);

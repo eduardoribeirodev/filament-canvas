@@ -2,7 +2,6 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas;
 
-use EduardoRibeiroDev\FilamentCanvas\Contracts\AssetLibrary;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\DocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\ElementType;
@@ -10,7 +9,6 @@ use EduardoRibeiroDev\FilamentCanvas\Contracts\PreviewRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\EloquentDocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\CanvasRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
-use EduardoRibeiroDev\FilamentCanvas\Support\EmptyAssetLibrary;
 use Filament\Contracts\Plugin;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Model;
@@ -21,8 +19,6 @@ class CanvasPlugin implements Plugin
     private array $stores = [];
 
     private array $renderers = [];
-
-    private array $libraries = [];
 
     private array $views = [];
 
@@ -35,8 +31,6 @@ class CanvasPlugin implements Plugin
     private array $extraElementClasses = [];
 
     private string $templateView = 'filament-canvas::templates.blank';
-
-    private string|AssetLibrary|null $defaultLibrary = null;
 
     private string $defaultEditorView = 'filament-canvas::editor';
 
@@ -94,17 +88,6 @@ class CanvasPlugin implements Plugin
     public function previewRenderer(string $type, string|PreviewRenderer $renderer): static
     {
         $this->renderers[$type] = $renderer;
-
-        return $this;
-    }
-
-    public function assetLibrary(string|AssetLibrary $type, string|AssetLibrary|null $library = null): static
-    {
-        if ($library === null) {
-            $this->defaultLibrary = $type;
-        } else {
-            $this->libraries[$type] = $library;
-        }
 
         return $this;
     }
@@ -184,7 +167,10 @@ class CanvasPlugin implements Plugin
             throw new InvalidArgumentException('The Resource model must implement CanvasOwner and may use HasCanvas.');
         }
         $plugin = clone $this;
-        $selected = $options['elements'] ?? $this->defaultElements;
+        $owner = new $model;
+        $selected = $options['elements']
+            ?? (method_exists($owner, 'canvasElementsAvailable') ? $owner->canvasElementsAvailable() : null)
+            ?? $this->defaultElements;
         if ($selected === null) {
             $registry = ElementRegistry::configured();
             // Owner definitions keep historical/domain types readable outside the panel.
@@ -203,9 +189,8 @@ class CanvasPlugin implements Plugin
         $plugin->stores[$type] = new EloquentDocumentStore($model, $registry);
         if (isset($options['template'])) {
             $plugin->template($options['template']);
-        }
-        if (isset($options['assetLibrary'])) {
-            $plugin->assetLibrary($type, $options['assetLibrary']);
+        } elseif (method_exists($owner, 'canvasTemplate') && $owner->canvasTemplate() !== null) {
+            $plugin->template($owner->canvasTemplate());
         }
         if (isset($options['editorView'])) {
             $plugin->editorView($type, $options['editorView']);
@@ -233,9 +218,6 @@ class CanvasPlugin implements Plugin
             $plugin->template($options['template']);
             unset($plugin->renderers[$type]);
         }
-        if (isset($options['assetLibrary'])) {
-            $plugin->assetLibrary($type, $options['assetLibrary']);
-        }
         if (isset($options['editorView'])) {
             $plugin->editorView($type, $options['editorView']);
         }
@@ -254,20 +236,9 @@ class CanvasPlugin implements Plugin
         return $resolved;
     }
 
-    public function resolveAssetLibrary(string $type): AssetLibrary
-    {
-        $library = $this->libraries[$type] ?? $this->defaultLibrary ?? new EmptyAssetLibrary;
-        $resolved = is_string($library) ? app($library) : $library;
-        if (! $resolved instanceof AssetLibrary) {
-            throw new InvalidArgumentException('The asset library must implement AssetLibrary.');
-        }
-
-        return $resolved;
-    }
-
     public function resolveRenderer(string $type): CanvasRenderer
     {
-        return new CanvasRenderer($this->elements($type), $this->resolveAssetLibrary($type), $this->templateView, $this->stores[$type] ?? null);
+        return new CanvasRenderer($this->elements($type), $this->templateView, $this->stores[$type] ?? null);
     }
 
     public function resolvePreviewRenderer(string $type): PreviewRenderer

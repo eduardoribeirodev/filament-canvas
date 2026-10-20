@@ -2,17 +2,22 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Forms\Components;
 
-use EduardoRibeiroDev\FilamentCanvas\Forms\StateCasts\RichTextEditorStateCast;
+use EduardoRibeiroDev\FilamentCanvas\Support\RichText;
 use Filament\Forms\Components\RichEditor;
-use Filament\Forms\Components\RichEditor\StateCasts\RichEditorStateCast;
+use Illuminate\Validation\ValidationException;
 
 class RichTextEditor extends RichEditor
 {
-    public function getDefaultStateCasts(): array
+    protected function setUp(): void
     {
-        return array_map(
-            fn ($cast) => $cast instanceof RichEditorStateCast ? new RichTextEditorStateCast($this) : $cast,
-            parent::getDefaultStateCasts(),
-        );
+        parent::setUp();
+
+        $this->rule(fn () => function ($attribute, $value, $fail): void {
+            try {
+                RichText::document(['rich_text' => $value]);
+            } catch (ValidationException $exception) {
+                $fail('Invalid or oversized rich text document.');
+            }
+        });
     }
 }

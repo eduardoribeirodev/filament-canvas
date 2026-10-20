@@ -227,9 +227,13 @@
 .canvas-livewire-shell .canvas-alignment-control { display: flex; align-items: center; gap: .5rem; font-size: .875rem; color: var(--gray-500); }
 .dark .canvas-livewire-shell .canvas-alignment-control { color: var(--gray-400); }
 
-.canvas-inline-editor-host .fi-fo-rich-editor { min-height: 0; border: 0; box-shadow: none; background: transparent; border-radius: 0; }
+.canvas-inline-editor-host .fi-fo-rich-editor.fi-input-wrp { min-height: 0; border: 0; box-shadow: none; background: transparent; border-radius: 0; }
 .canvas-inline-editor-host .fi-fo-rich-editor-main { padding: 0; min-height: 0; background: transparent; }
 .canvas-inline-editor-host .fi-fo-rich-editor-content { padding: 0; min-height: 0; max-height: none; color: inherit; font-size: inherit; }
 .canvas-inline-editor-host .tiptap { margin: 0; padding: 0; min-height: 100%; outline: 2px solid var(--primary-500); font-size: inherit; color: inherit; cursor: text; }
-.canvas-inline-editor-host .fi-fo-rich-editor-floating-toolbar { width: max-content; max-width: min(640px, calc(100vw - 32px)); font-family: var(--font-family); font-size: .875rem; line-height: 1.5; white-space: normal; z-index: 50; }
+.canvas-inline-editor-host .fi-fo-rich-editor-floating-toolbar, .canvas-inline-editor-toolbar { width: max-content; max-width: min(640px, calc(100vw - 32px)); font-family: var(--font-family); font-size: .875rem; line-height: 1.5; white-space: normal; z-index: 50; }
 .canvas-inline-editor-host .fi-fo-field-content-col { gap: 0; }
+
+/* Canvas text keeps its document colors, including inside a dark Filament panel. */
+.canvas-inline-editor-host .tiptap :where(p,h1,h2,h3,h4,h5,h6,strong,b,em,i,u,s,ul,ol,li,blockquote,code,pre,a,mark) { color: inherit; }
+.canvas-inline-editor-host .tiptap :where(strong,b) { font-weight: 700; }

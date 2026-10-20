@@ -24,8 +24,6 @@ abstract class EditCanvas extends Page
 
     protected static ?array $canvasExtraElements = null;
 
-    protected static ?string $canvasAssetLibrary = null;
-
     protected static ?string $canvasEditorView = null;
 
     public static function getCanvasDocumentType(): string
@@ -39,7 +37,7 @@ abstract class EditCanvas extends Page
             'model' => static::getResource()::getModel(),
             'template' => static::$canvasTemplate, 'elements' => static::$canvasElements,
             'extraElements' => static::$canvasExtraElements,
-            'assetLibrary' => static::$canvasAssetLibrary, 'editorView' => static::$canvasEditorView,
+            'editorView' => static::$canvasEditorView,
         ], fn ($value) => $value !== null);
     }
 
@@ -56,7 +54,7 @@ abstract class EditCanvas extends Page
             ->options(static::getCanvasOptions())->getEditorParameters();
     }
 
-    protected static ?string $title = 'Editor visual';
+    protected static ?string $title = 'Visual editor';
 
     protected \Filament\Support\Enums\Width|string|null $maxContentWidth = 'full';
 

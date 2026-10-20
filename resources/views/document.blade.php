@@ -4,7 +4,7 @@
     $height = (float) $size[1];
 @endphp
 <!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"></head><body>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"><head><meta charset="utf-8"></head><body>
 @include($template)
 <style>
 body{margin:0}
@@ -14,16 +14,7 @@ html{width:{{ $width }}px;height:{{ $height }}px;overflow:hidden}
 body{width:{{ $width }}pt;height:{{ $height }}pt;zoom:.75;overflow:visible}
 @endif
 </style>
-<script>
-window.canvasReady = false;
-(async () => {
-    await (window.canvasTemplateReady ?? Promise.resolve());
-    await document.fonts.ready;
-    await Promise.all([...document.images].map(image => image.complete ? Promise.resolve() : new Promise(resolve => {
-        image.addEventListener('load', resolve, {once: true});
-        image.addEventListener('error', resolve, {once: true});
-    })));
-    window.canvasReady = true;
-})().catch(error => { console.error(error); window.canvasError = String(error); });
-</script>
+<script type="application/json" data-canvas-document-data>{!! json_encode($document->metadata ?? [], JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+@stack('canvas-display-scripts')
+<script>{!! str_ireplace('</script', '<\/script', file_get_contents(dirname((new \ReflectionClass(\EduardoRibeiroDev\FilamentCanvas\CanvasPlugin::class))->getFileName(), 2).'/resources/dist/document.js')) !!}</script>
 </body></html>

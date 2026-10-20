@@ -97,27 +97,30 @@ function plainDocument(text) {
     return {type: 'doc', content: String(text ?? '').split('\n').map(line => ({type: 'paragraph', content: line ? [{type: 'text', text: line}] : []}))};
 }
 
-export function canonicalElementData(data = {}) {
-    const dados=data.dados && typeof data.dados==='object' && !Array.isArray(data.dados)
-        ? {...data.dados}
-        : {...(data.configuracoes || {}),...(data.conteudo || {}),...Object.fromEntries(Object.entries(data.estilo || {}).filter(([,value])=>value!==null && value!==''))};
-    const envelope={...data,dados};
-    delete envelope.configuracoes;delete envelope.conteudo;delete envelope.estilo;
-    return envelope;
-}
-
 /**
  * Canvas geometry uses pt in the document and one CSS px per pt in the editor.
  * PreviewRenderer supplies a .page and .block[data-editor-index] nodes.
- * Extend via options.extension(state), retaining getters with property descriptors.
  */
 export default function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight = 841.89, previewHtml = '', options = {}) {
+    const minZoom = Number(options.minZoom ?? .25), maxZoom = Number(options.maxZoom ?? 3);
+    if (!Number.isFinite(minZoom) || !Number.isFinite(maxZoom) || minZoom <= 0 || maxZoom <= minZoom) {
+        throw new RangeError('Canvas zoom limits must be positive numbers with maxZoom greater than minZoom.');
+    }
     const state = {
-        blocks: JSON.parse(JSON.stringify(initial)), editorUi: {}, assets, pageWidth: Number(pageWidth), pageHeight: Number(pageHeight), previewHtml, selected: null,
-        cropIndex: null, panel: 'properties', zoom: 1, grid: true, snapPixels: 5, alignmentSnap: true, snapGuides: [], viewport: {x:32,y:32,width:0,height:0}, editorFitZoom: null, editorViewportSize: null, disposeEditorViewport: null, disposeZoomSlider: null, dirty: false, saving: false, imageUploading: false, error: '', undoStack: [], redoStack: [], gesture: null,
-        labels: {title: 'Título', text: 'Texto', asset: 'Imagem', image: 'Imagem', photo: 'Foto', drawing: 'Desenho', table: 'Tabela', 'data-table': 'Tabela', ...(options.labels || {})},
-        imageTypes: options.imageTypes || [...new Set(['asset', 'image', 'photo', ...Object.entries(options.elementTypes || {}).filter(([,element]) => element.kind === 'image').map(([type]) => type)])], elementTypes: options.elementTypes || {},
-        previewReady: false, previewLoaded: false, previewNodes: new Map(), previewSignatures: new Map(), previewFrame: null, nextKey: 1, nativePinch: null, destroyed: false, disposeWatch: null, disposeSelectionWatch: null, textEditing: null, inlineMountTimer: null, inlineFocusTimer: null, richEditorSignature: null,richTextColors:options.richTextColors || {},previewFontStyle:null, inspectorGeneration:0, inspectorSelection:null, inspectorSignature:null, inspectorValueSignature:null, inspectorRequestRevision:0, inspectorHydrating:false, inspectorInvalid:false, inspectorApplying:false, inspectorTimer:null, inspectorPending:null, inspectorPromise:null, inspectorFields:[], inspectorEditRevisions:new Map(), disposeInspectorWatch:null, serverRenders:new Map(), serverRenderTimers:new Map(), serverRenderRequests:new Map(), adding:false,
+        blocks: JSON.parse(JSON.stringify(initial)), documentData: options.data || {}, assets, pageWidth: Number(pageWidth), pageHeight: Number(pageHeight), previewHtml, selected: null,
+        cropIndex: null, panel: 'properties', minZoom, maxZoom, zoom: Math.max(minZoom,Math.min(maxZoom,1)), grid: true, snapPixels: 5, alignmentSnap: true, snapGuides: [], viewport: {x:32,y:32,width:0,height:0}, editorFitZoom: null, editorViewportSize: null, disposeEditorViewport: null, disposeZoomSlider: null, dirty: false, saving: false, imageUploading: false, error: '', undoStack: [], redoStack: [], gesture: null,
+        messages: {
+            load_properties_error: 'Unable to load element properties.',
+            validation_error: 'Check property values and validation messages.',
+            upload_error: 'Unable to upload media. Check its format, size and validation messages.',
+            save_error: 'Unable to save. Check validation messages or reload if another window changed the page.',
+            create_error: 'Unable to create the element.',
+            missing_template: 'Missing view template for :type.',
+            ...(options.messages || {}),
+        },
+        labels: {title: 'Title', text: 'Text', asset: 'Image', image: 'Image', photo: 'Photo', drawing: 'Drawing', table: 'Table', 'data-table': 'Table', ...(options.labels || {})},
+        elementTypes: {title:{kind:'text'},text:{kind:'text'},asset:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},image:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},photo:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},drawing:{kind:'drawing'},'data-table':{kind:'table'},table:{kind:'table'},...(options.elementTypes || {})}, templates: options.templates || {},
+        previewReady: false, previewLoaded: false, previewNodes: new Map(), previewSignatures: new Map(), previewFrame: null, nextKey: 1, nativePinch: null, destroyed: false, disposeWatch: null, disposeSelectionWatch: null, textEditing: null, inlineMountTimer: null, inlineFocusTimer: null, richEditorSignature: null,richTextColors:options.richTextColors || {},previewFontStyle:null, inspectorGeneration:0, inspectorSelection:null, inspectorSignature:null, inspectorValueSignature:null, inspectorRequestRevision:0, inspectorHydrating:false, inspectorInvalid:false, inspectorApplying:false, inspectorPending:null, inspectorPromise:null, inspectorFields:[], inspectorEditRevisions:new Map(), disposeInspectorWatch:null, adding:false,
         init() {
         this.prepare();
         this.$nextTick(() => { if(this.destroyed)return; if(options.fitViewport)this.observeEditorViewport();else this.fit(); this.$refs.preview.srcdoc = this.previewHtml; });
@@ -134,7 +137,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         fit() {
             const stage=this.$refs.stage;
             if(!stage)return;
-            const zoom=Math.max(.25,Math.min(1,(stage.clientWidth-64)/this.pageWidth,(stage.clientHeight-64)/this.pageHeight));
+            const zoom=Math.max(this.minZoom,Math.min(this.maxZoom,1,(stage.clientWidth-64)/this.pageWidth,(stage.clientHeight-64)/this.pageHeight));
             this.placeViewport(zoom,Math.max(32,(stage.clientWidth-this.pageWidth*zoom)/2),32);
             this.editorFitZoom=this.zoom;
         },
@@ -234,12 +237,8 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         },
         endGesture() { this.gesture=null;this.snapGuides=[]; },
         selectBlock(index) { if(this.textEditing)this.commitTextEditing();this.selected=index;this.syncInspector(); },
-        hasCapability(block, capability) {
-            const capabilities=this.elementTypes[block?.type]?.capabilities;
-            if(Array.isArray(capabilities))return capabilities.includes(capability);
-            if(capabilities && typeof capabilities==='object')return Boolean(capabilities[capability]);
-            return capability==='text'?['title','text'].includes(block?.type):capability==='image'?this.imageTypes.includes(block?.type):false;
-        },
+        get imageTypes() { return Object.keys(this.elementTypes).filter(type=>this.elementTypes[type].kind==='image'); },
+        isText(block) { return this.elementTypes[block?.type]?.kind==='text'; },
         syncInspector() {
             if(this.destroyed)return;
             this.syncRichEditor();
@@ -259,20 +258,16 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 }
             }
             const key=this.current?String(this.current._key):null;
-            const signature=this.current?JSON.stringify(this.current.data.dados):null;
-            if(this.$wire?.selectInspector && (key!==this.inspectorSelection || (!this.inspectorPending && !this.inspectorApplying && !this.inspectorHydrating && signature!==this.inspectorSignature))){
-                this.hydrateInspector();
-            }
+            if(this.$wire?.selectInspector && key!==this.inspectorSelection)this.hydrateInspector();
             options.inspectorSync?.call(this);
         },
         async hydrateInspector() {
             const block=this.current, key=block?String(block._key):null;
             const generation=++this.inspectorGeneration;
             this.inspectorSelection=key;this.inspectorRequestRevision=0;
-            this.inspectorSignature=block?JSON.stringify(block.data.dados):null;
+            this.inspectorSignature=block?JSON.stringify(block.data.properties):null;
             this.inspectorPending=null;this.inspectorValueSignature=null;
-            if(this.inspectorTimer!==null)clearTimeout(this.inspectorTimer);
-            this.inspectorTimer=null;this.inspectorHydrating=true;
+            this.inspectorHydrating=true;this.schedulePreview();
             try {
                 // Filament's native color watcher settles before its schema is removed.
                 const colorFields=this.$el?.querySelectorAll?.('[data-canvas-color-picker]') || [];
@@ -283,13 +278,14 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 const result=await this.$wire.selectInspector(block?.type ?? null,key,block?this.serializeBlock(block):{},generation);
                 if(this.destroyed || generation!==this.inspectorGeneration || key!==(this.current?String(this.current._key):null))return;
                 if(result?.stale)return;
-                if(result?.normalized){block.data.dados=result.normalized;this.inspectorSignature=JSON.stringify(block.data.dados);}
+                if(block && result?.normalized){block.data.properties=result.normalized;this.inspectorSignature=JSON.stringify(block.data.properties);}
                 this.inspectorFields=result?.fields || [];
                 this.inspectorValueSignature=this.inspectorStateSignature(result?.state ?? this.$wire.inspectorData ?? {});
                 this.inspectorInvalid=false;
+                if(this.error===this.messages.load_properties_error)this.error='';
                 this.syncRichEditor();
-            } catch {if(generation===this.inspectorGeneration)this.error='Não foi possível carregar as propriedades do elemento.';}
-            finally {if(generation===this.inspectorGeneration){this.inspectorHydrating=false;this.$nextTick?.(()=>{this.syncRichEditor();if(this.textEditing)this.mountTextEditor();});}}
+            } catch {if(generation===this.inspectorGeneration)this.error=this.messages.load_properties_error;}
+            finally {if(generation===this.inspectorGeneration){this.inspectorHydrating=false;this.schedulePreview();this.$nextTick?.(()=>{this.syncRichEditor();if(this.textEditing)this.mountTextEditor();});}}
         },
         inspectorStateSignature(values) {
             const comparison=JSON.parse(JSON.stringify(values ?? {}));
@@ -312,12 +308,10 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             this.inspectorPending={key,generation:this.inspectorGeneration,revision:++this.inspectorRequestRevision,values:JSON.parse(JSON.stringify(values ?? {}))};
             this.inspectorEditRevisions.set(key,{generation:this.inspectorGeneration,revision:this.inspectorRequestRevision});
             this.projectInspectorValues(this.inspectorPending.values);
-            if(this.inspectorTimer!==null)clearTimeout(this.inspectorTimer);
-            this.inspectorTimer=setTimeout(()=>{this.inspectorTimer=null;this.flushInspector();},220);
         },
         projectInspectorValues(values) {
             const block=this.current;if(!block)return;
-            const dados=JSON.parse(JSON.stringify(block.data.dados));
+            const properties=JSON.parse(JSON.stringify(block.data.properties));
             for(const field of this.inspectorFields){
                 const parts=field.path.split('.');let source=values;
                 for(const part of parts){if(source===null || source===undefined || !Object.hasOwn(source,part)){source=undefined;break;}source=source[part];}
@@ -325,17 +319,19 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 if(field.numeric && (source===null || source==='' || Number.isFinite(Number(source))))source=(source===null || source==='')?null:(field.integer?Math.trunc(Number(source)):Number(source));
                 if(field.list && source && !Array.isArray(source))source=Object.values(source);
                 if(field.list && field.simple && Array.isArray(source))source=source.map(row=>row && typeof row==='object' && Object.hasOwn(row,field.simple)?row[field.simple]:row);
-                let target=dados;
+                let target=properties;
                 for(const part of parts.slice(0,-1)){if(!target[part] || typeof target[part]!=='object')target[part]={};target=target[part];}
                 if(source===null && !Object.hasOwn(target,parts.at(-1)))continue;
                 target[parts.at(-1)]=JSON.parse(JSON.stringify(source));
             }
-            if(JSON.stringify(dados)!==JSON.stringify(block.data.dados)){this.checkpoint();block.data.dados=dados;}
-            this.inspectorSignature=JSON.stringify(block.data.dados);this.schedulePreview();
+            if(properties.rich_text?.type==='doc'){
+                properties.html=renderRichDocument(properties.rich_text,this.richTextColors);
+                properties.text=plainRichDocument(properties.rich_text);
+            }
+            if(JSON.stringify(properties)!==JSON.stringify(block.data.properties)){this.checkpoint();block.data.properties=properties;}
+            this.inspectorSignature=JSON.stringify(block.data.properties);this.schedulePreview();
         },
         async flushInspector() {
-            if(this.inspectorTimer!==null)clearTimeout(this.inspectorTimer);
-            this.inspectorTimer=null;
             const pending=this.inspectorPending;
             if(!pending){if(this.inspectorPromise)await this.inspectorPromise;return;}
             this.inspectorPending=null;
@@ -347,7 +343,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                     const result=await this.$wire.updateInspector(pending.values,pending.key,pending.generation,pending.revision,payload);
                     if(this.destroyed || result?.stale)return;
                     this.inspectorInvalid=false;this.error='';this.applyInspectorPatch(result,payload);
-                } catch {if(pending.generation===this.inspectorGeneration){this.inspectorInvalid=true;this.error='Verifique os valores e as mensagens de validação das propriedades.';}}
+                } catch {if(pending.generation===this.inspectorGeneration){this.inspectorInvalid=true;this.error=this.messages.validation_error;}}
             })();
             this.inspectorPromise=promise;
             await promise;
@@ -356,49 +352,18 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         applyInspectorPatch(result, payload) {
             const block=this.blocks.find(item=>String(item._key)===String(result?.key));
             const token=this.inspectorEditRevisions.get(String(result?.key));
-            if(!block || !token || result.generation!==token.generation || result.revision!==token.revision || JSON.stringify(block.data.dados)!==JSON.stringify(payload.data.dados))return;
-            const dados={...block.data.dados,...result.patch};
-            for(const property of result.removed || [])delete dados[property];
-            if(JSON.stringify(dados)!==JSON.stringify(block.data.dados))block.data.dados=dados;
-            this.inspectorApplying=true;if(String(this.current?._key)===String(result.key))this.inspectorSignature=JSON.stringify(block.data.dados);
-            const expected={type:payload.type,data:{...payload.data,dados:{...payload.data.dados,...result.patch}}};
-            for(const property of result.removed || [])delete expected.data.dados[property];
-            if(this.contentSignature(block)===this.contentSignature(expected))this.serverRenders.set(block._key,{signature:this.contentSignature(block),html:result.html ?? ''});
+            if(!block || !token || result.generation!==token.generation || result.revision!==token.revision || JSON.stringify(block.data.properties)!==JSON.stringify(payload.data.properties))return;
+            const properties={...block.data.properties,...result.patch};
+            for(const property of result.removed || [])delete properties[property];
+            if(JSON.stringify(properties)!==JSON.stringify(block.data.properties))block.data.properties=properties;
+            this.inspectorApplying=true;if(String(this.current?._key)===String(result.key))this.inspectorSignature=JSON.stringify(block.data.properties);
             this.schedulePreview();
             const release=()=>{this.inspectorApplying=false;};
             if(this.$nextTick)this.$nextTick(release);else release();
         },
         serializeBlock(block) { const payload=JSON.parse(JSON.stringify(block));delete payload._key;return payload; },
-        scheduleElementRender(block) {
-            if(!this.$wire?.renderElement || this.destroyed)return;
-            const key=block._key,signature=this.contentSignature(block);
-            if(this.serverRenders.get(key)?.signature===signature || this.serverRenderRequests.get(key)===signature)return;
-            if(this.serverRenderTimers.has(key))clearTimeout(this.serverRenderTimers.get(key));
-            this.serverRenderTimers.set(key,setTimeout(async()=>{
-                this.serverRenderTimers.delete(key);this.serverRenderRequests.set(key,signature);
-                try {
-                    const html=await this.$wire.renderElement(this.serializeBlock(block));
-                    const current=this.blocks.find(item=>item._key===key);
-                    if(!this.destroyed && current && this.contentSignature(current)===signature){this.serverRenders.set(key,{signature,html});this.previewSignatures.delete(key);this.schedulePreview();}
-                } catch {if(!this.destroyed)this.error='Não foi possível atualizar a prévia do elemento.';}
-                finally {if(this.serverRenderRequests.get(key)===signature)this.serverRenderRequests.delete(key);}
-            },300));
-        },
-        applyTextStyle(detail) {
-            if(this.saving || !this.hasCapability(this.current,'text') || String(this.current._key)!==String(detail?.key))return;
-            const property=detail?.property;
-            let value;
-            if(property==='color'){value=richColor(detail.value);if(!value)return;}
-            else if(property==='font_size'){value=Number(detail.value);if(!Number.isFinite(value)||value<1||value>100)return;}
-            else return;
-            if(String(this.current.data.dados[property])===String(value))return;
-            this.checkpoint();this.current.data.dados[property]=value;this.syncPreview();
-        },
         mediaCollections(block) {
-            const definitions=this.elementTypes[block?.type]?.media_collections;
-            if(definitions)return Object.entries(definitions).map(([name,policy])=>({name,reference_field:'imagem_origem',max_files:1,...policy}));
-            if(this.elementTypes[block?.type])return [];
-            return this.imageTypes.includes(block?.type)?[{name:'image',reference_field:'imagem_origem',max_files:1}]:[];
+            return Object.entries(this.elementTypes[block?.type]?.media_collections || {}).map(([name,policy])=>({name,reference_field:'image_id',max_files:1,...policy}));
         },
         mediaCollection(block,name=null) { const policies=this.mediaCollections(block);return name?policies.find(policy=>policy.name===name):policies[0]; },
         selectAsset(id,key=this.current?._key,collection=null) {
@@ -411,9 +376,9 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             const block=this.current,value=policy.max_files>1?assets.map(asset=>asset.id):assets[0]?.id ?? null;
             if(JSON.stringify(block.data[policy.reference_field]??null)===JSON.stringify(value))return;
             this.checkpoint();block.data[policy.reference_field]=value;
-            if(policy.reference_field==='imagem_origem')block.data.imagem_url=assets[0]?this.safeImageUrl(assets[0].image):'';
-            if(Object.hasOwn(block.data.dados,'image_transform'))block.data.dados.image_transform=null;
-            this.inspectorSignature=JSON.stringify(block.data.dados);
+            if(policy.reference_field==='image_id')block.data.image_url=assets[0]?this.safeImageUrl(assets[0].image):'';
+            if(Object.hasOwn(block.data.properties,'image_transform'))block.data.properties.image_transform=null;
+            this.inspectorSignature=JSON.stringify(block.data.properties);
             this.cropIndex=null;this.syncInspector();this.syncPreview();
         },
         mediaImages(block,collection) {
@@ -436,7 +401,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                     const ids=(result.inserted || [result.asset]).map(asset=>asset.id);
                     this.selectAsset(policy.max_files>1?ids:ids[0],key,policy.name);
                 }
-            } catch {this.error='Não foi possível enviar a mídia. Verifique o formato, o tamanho e as mensagens de validação.';}
+            } catch {this.error=this.messages.upload_error;}
             finally {this.imageUploading=false;}
         },
         syncRichEditor() {
@@ -445,11 +410,11 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             const editor = component?.getEditor?.();
             if(!element || !editor || editor.isDestroyed || this.textEditing)return;
             this.richTextColors=editor.extensionManager?.extensions?.find(extension=>extension.name==='textColor')?.options?.textColors || this.richTextColors;
-            const block=this.current, isText=this.hasCapability(block,'text');
+            const block=this.current, isText=this.isText(block);
             element.dataset.canvasElementKey=isText?String(block._key):'';
             if(!isText){this.richEditorSignature=null;return;}
-            const contents=block.data.dados || {};
-            const value=contents.rich_text || (contents.html ? sanitizeRichHtml(contents.html) : plainDocument(this.text(block)));
+            const contents=block.data.properties || {};
+            const value=contents.rich_text || plainDocument(this.text(block));
             const signature=JSON.stringify([block._key,value]);
             if(signature===this.richEditorSignature && element.dataset.canvasSyncedKey===String(block._key))return;
             const previousKey=element.dataset.canvasSyncedKey;
@@ -473,37 +438,36 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             if(this.saving || this.textEditing || key===null || key===undefined)return;
             if(this.$el?.querySelector?.('[data-canvas-rich-editor]')?.dataset?.canvasHydrating)return;
             const block=this.blocks.find(block=>String(block._key)===String(key));
-            if(!block || !this.hasCapability(block,'text') || String(this.current?._key)!==String(key))return;
+            if(!block || !this.isText(block) || String(this.current?._key)!==String(key))return;
             const document=detail?.document || detail;
             if(document?.type!=='doc')return;
             const richText=JSON.parse(JSON.stringify(document));
             const html=renderRichDocument(richText,this.richTextColors),text=plainRichDocument(richText);
-            const contents=block.data.dados || {};
+            const contents=block.data.properties || {};
             if(richDocumentSignature(contents.rich_text)===richDocumentSignature(richText))return;
             this.checkpoint();
-            block.data.dados={...contents,rich_text:richText,html,text};
+            block.data.properties={...contents,rich_text:richText,html,text};
             this.richEditorSignature=JSON.stringify([block._key,richText]);
-            this.inspectorSignature=JSON.stringify(block.data.dados);
+            this.inspectorSignature=JSON.stringify(block.data.properties);
             this.$wire?.$set?.('inspectorData.rich_text',richText,false);
             this.schedulePreview();
         },
         textHtml(block) {
-            if(this.isTextEditing(block))return this.textEditing.html;
-            const contents=block.data.dados || {};
-            if(contents.html && globalThis.document?.createElement)return sanitizeRichHtml(contents.html);
+            if(this.isTextEditing(block) && this.textEditing.document)return this.textEditing.html;
+            const contents=block.data.properties || {};
             if(contents.rich_text?.type==='doc')return renderRichDocument(contents.rich_text,this.richTextColors);
-            if(contents.html)return sanitizeRichHtml(contents.html);
-            return escapeHtml(this.text(block)).replace(/\n/g,'<br>');
+            return escapeHtml(this.text(block) ?? '').replace(/\n/g,'<br>');
         },
         isTextEditing(block) { return Boolean(block && this.textEditing && String(block._key)===String(this.textEditing.key)); },
+        isTextEditorReady(block) { return this.isTextEditing(block) && Boolean(this.textEditing.element?.isConnected) && !this.inspectorHydrating; },
         startTextEditing(event,index) {
             const block=this.blocks[index];
-            if(this.saving || !this.hasCapability(block,'text') || this.elementTypes[block?.type]?.capabilities?.inline_text===false)return;
+            if(this.saving || !this.isText(block))return;
             event?.preventDefault?.();event?.stopPropagation?.();
             if(this.isTextEditing(block))return;
             if(this.textEditing)this.commitTextEditing();
             this.selected=index;this.cropIndex=null;this.endGesture();
-            this.textEditing={key:block._key,html:this.textHtml(block),document:null,original:JSON.stringify(block.data.dados || {}),element:null};
+            this.textEditing={key:block._key,html:this.textHtml(block),document:null,original:JSON.stringify(block.data.properties || {}),element:null};
             this.syncPreview();this.$nextTick?.(()=>this.mountTextEditor());
         },
         nativeInlineEditor() {
@@ -516,14 +480,14 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             const block=this.blocks.find(item=>String(item._key)===String(this.textEditing?.key));
             const paper=this.$refs?.paper;
             if(!block || !paper)return {};
-            const rect=paper.getBoundingClientRect(),d=block.data,c=d.dados || {};
-            return {position:'fixed',left:(rect.left+Number(d.x_pt)*this.zoom)+'px',top:(rect.top+Number(d.y_pt)*this.zoom)+'px',width:Number(d.largura_pt)*this.zoom+'px',height:Number(d.altura_pt)*this.zoom+'px',fontSize:Number(c.font_size ?? (block.type==='title'?24:12))*this.zoom+'px',color:richColor(c.color)||'#111111',zIndex:'40'};
+            const rect=paper.getBoundingClientRect(),d=block.data,c=d.properties || {};
+            return {position:'fixed',left:(rect.left+Number(d.x_pt)*this.zoom)+'px',top:(rect.top+Number(d.y_pt)*this.zoom)+'px',width:Number(d.width_pt)*this.zoom+'px',height:Number(d.height_pt)*this.zoom+'px',fontSize:Number(c.font_size ?? (block.type==='title'?24:12))*this.zoom+'px',color:richColor(c.color)||'#111111',visibility:this.isTextEditorReady(block)?'visible':'hidden',zIndex:'40'};
         },
         textEditorHtml(block) { return this.isTextEditing(block)?this.textEditing.html:this.textHtml(block); },
         textEditorStyle(block) {
-            const c=block.data.dados || {},previewNode=this.previewNodes.get(block._key);
+            const c=block.data.properties || {},previewNode=this.previewNodes.get(block._key);
             const fontFamily=previewNode?.ownerDocument?.defaultView?.getComputedStyle?.(previewNode)?.fontFamily || 'Arial,sans-serif';
-            return {fontWeight:c.rich_text?.type==='doc'?'400':(c.bold ?? (block.type==='title'))?'700':'400',fontStyle:c.rich_text?.type==='doc'?'normal':c.italic?'italic':'normal',fontFamily,lineHeight:String(Math.max(.5,Math.min(10,Number(c.leading??1.25)))),textAlign:c.rich_text?.type==='doc'?'left':c.align??'center',columnCount:Math.max(1,Math.min(12,Math.trunc(Number(c.columns??1)))),backgroundColor:richColor(c.background_color)||'transparent',padding:Math.max(0,Math.min(100,Number(c.padding)||0))*this.zoom+'px',borderRadius:Math.max(0,Math.min(100,Number(c.border_radius)||0))*this.zoom+'px',whiteSpace:'pre-wrap',transform:`rotate(${-Number(block.data.rotacao_graus || 0)}deg)`,transformOrigin:`${Number(block.data.largura_pt)*this.zoom/2}px ${Number(block.data.altura_pt)*this.zoom/2}px`};
+            return {fontSize:this.inlineEditorStyle().fontSize,color:this.inlineEditorStyle().color,minHeight:Number(block.data.height_pt)*this.zoom+'px',fontWeight:'400',fontStyle:'normal',fontFamily,lineHeight:String(Math.max(.5,Math.min(10,Number(c.leading??1.25)))),textAlign:'left',columnCount:Math.max(1,Math.min(12,Math.trunc(Number(c.columns??1)))),backgroundColor:previewNode?.querySelector('.canvas-rich-text')?'transparent':richColor(c.background_color)||'transparent',padding:Math.max(0,Math.min(100,Number(c.padding)||0))*this.zoom+'px',borderRadius:Math.max(0,Math.min(100,Number(c.border_radius)||0))*this.zoom+'px',whiteSpace:'pre-wrap',transform:`rotate(${-Number(block.data.rotation_deg || 0)}deg)`,transformOrigin:`${Number(block.data.width_pt)*this.zoom/2}px ${Number(block.data.height_pt)*this.zoom/2}px`};
         },
         positionInlineEditor() {
             if(!this.textEditing)return;
@@ -537,24 +501,27 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             const block=this.blocks.find(item=>String(item._key)===String(editing.key));
             const {node,component,editor}=this.nativeInlineEditor();
             if(!block || !editor || editor.isDestroyed || this.inspectorHydrating){this.inlineMountTimer=setTimeout(()=>this.mountTextEditor(),40);return;}
-            if(editing.element===editor.view.dom){this.positionInlineEditor();return;}
-            const contents=block.data.dados || {};
-            const productSource=contents.text_source==='product' || (!Object.hasOwn(contents,'text_source') && contents.field && contents.text==null);
-            const linkedHtml=productSource?this.previewNodes.get(block._key)?.querySelector('.text-content')?.innerHTML:null;
-            const value=contents.rich_text || (contents.html?sanitizeRichHtml(contents.html):linkedHtml?sanitizeRichHtml(linkedHtml):plainDocument(this.text(block)));
+            for(const toolbar of this.$refs.inlineTextHost?.querySelectorAll('.fi-fo-rich-editor-floating-toolbar') || []){
+                toolbar.dataset.canvasInlineToolbar=String(editing.key);
+                toolbar.classList.add('canvas-inline-editor-toolbar');
+            }
+            if(editing.element===editor.view.dom){this.positionInlineEditor();this.syncPreview();return;}
+            const contents=block.data.properties || {};
+            const value=contents.rich_text || plainDocument(this.text(block));
             editing.original=JSON.stringify(contents);node.dataset.canvasHydrating='true';node.dataset.canvasElementKey=String(editing.key);
             editor.commands.setContent(value,{emitUpdate:false});
             const state=editor.state;
             if(state?.constructor?.create && editor.view?.updateState)editor.view.updateState(state.constructor.create({doc:state.doc,plugins:state.plugins}));
             component.shouldUpdateState=false;component.state=editor.getJSON();
             editing.document=JSON.parse(JSON.stringify(editor.getJSON()));editing.html=editor.getHTML();editing.element=editor.view.dom;
-            this.positionInlineEditor();
+            editing.element.classList.add('canvas-rich-text');
+            this.positionInlineEditor();this.syncPreview();
             this.$nextTick?.(()=>{delete node.dataset.canvasHydrating;if(this.textEditing?.key===editing.key && this.textEditing?.element===editor.view.dom){editor.commands.focus('end',{scrollIntoView:false});}});
         },
         inputText(detail) {
             const editing=this.textEditing;
             if(!editing || String(detail?.key)!==String(editing.key) || detail?.document?.type!=='doc')return;
-            editing.document=JSON.parse(JSON.stringify(detail.document));editing.html=renderRichDocument(editing.document,this.richTextColors);
+            editing.document=JSON.parse(JSON.stringify(detail.document));editing.html=renderRichDocument(editing.document,this.richTextColors);this.schedulePreview();
         },
         textEditorKey(event) {
             if(!this.textEditing)return;
@@ -571,15 +538,10 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             if(node)node.dataset.canvasElementKey='';
             if(block && document?.type==='doc'){
                 const original=JSON.parse(editing.original),html=renderRichDocument(document,this.richTextColors);
-                const previous=original.rich_text?.type==='doc'?renderRichDocument(original.rich_text,this.richTextColors):sanitizeRichHtml(original.html || escapeHtml(original.text ?? this.text(block)).replace(/\n/g,'<br>'));
-                if(html!==previous){this.checkpoint();block.data.dados=this.textCommitData(block,original,{rich_text:document,html,text:plainRichDocument(document)});}
+                const previous=original.rich_text?.type==='doc'?renderRichDocument(original.rich_text,this.richTextColors):escapeHtml(original.text ?? this.text(block)).replace(/\n/g,'<br>');
+                if(html!==previous){this.checkpoint();block.data.properties={...original,rich_text:document,html,text:plainRichDocument(document)};}
             }
             editor?.commands.blur();this.syncPreview();this.syncInspector();
-        },
-        textCommitData(block,original,content) {
-            const dados={...original,...content};
-            if(this.hasCapability(block,'product_text') && (original.text_source==='product' || (!Object.hasOwn(original,'text_source') && original.field && original.text==null)))dados.text_source='manual';
-            return dados;
         },
         resumeInlineEditing(detail) {
             if(!this.textEditing || !String(detail?.key ?? '').startsWith('inlineTextForm.'))return;
@@ -589,7 +551,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             this.inlineFocusTimer=setTimeout(()=>{this.inlineFocusTimer=null;if(!this.destroyed && this.textEditing?.key===key)this.nativeInlineEditor().editor?.commands.focus(null,{scrollIntoView:false});},350);
         },
         finishInlineEditing(event) {
-            if(!this.textEditing || event.target?.closest?.('[data-canvas-inline-editor-host],.fi-modal,[role="dialog"]'))return;
+            if(!this.textEditing || event.target?.closest?.('[data-canvas-inline-editor-host],[data-canvas-inline-toolbar],.fi-modal,[role="dialog"]'))return;
             this.commitTextEditing();
         },
         cancelTextEditing() {
@@ -624,37 +586,37 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         if(this.saving||!this.imageTypes.includes(this.blocks[i].type))return;
         e.preventDefault(); e.stopPropagation(); this.selected=i; this.snapGuides=[]; this.checkpoint();
         const d=this.blocks[i].data;
-        d.dados={...(d.dados||{}),fit:d.dados?.fit||'contain',crop_x:d.dados?.crop_x??.5,crop_y:d.dados?.crop_y??.5};
-        if(!d.dados.image_transform){
+        d.properties={...(d.properties||{}),fit:d.properties?.fit||'contain',crop_x:d.properties?.crop_x??.5,crop_y:d.properties?.crop_y??.5};
+        if(!d.properties.image_transform){
             const img=this.previewNodes.get(this.blocks[i]._key)?.querySelector('img')||e.currentTarget?.querySelector('img');
-            const iw=img?.naturalWidth||Number(d.largura_pt), ih=img?.naturalHeight||Number(d.altura_pt);
-            const scale=(d.dados.fit==='cover'?Math.max:Math.min)(d.largura_pt/iw,d.altura_pt/ih);
-            d.dados.image_transform={x:(d.largura_pt-iw*scale)*d.dados.crop_x,y:(d.altura_pt-ih*scale)*d.dados.crop_y,width:iw*scale,height:ih*scale,rotation:0};
+            const iw=img?.naturalWidth||Number(d.width_pt), ih=img?.naturalHeight||Number(d.height_pt);
+            const scale=(d.properties.fit==='cover'?Math.max:Math.min)(d.width_pt/iw,d.height_pt/ih);
+            d.properties.image_transform={x:(d.width_pt-iw*scale)*d.properties.crop_x,y:(d.height_pt-ih*scale)*d.properties.crop_y,width:iw*scale,height:ih*scale,rotation:0};
         }
         this.cropIndex=i;
         this.syncPreview();
     },
         imageStyle(b, includeFlip=true) {
-        const c=b.data.dados||{},t=c.image_transform;
+        const c=b.data.properties||{},t=c.image_transform;
         const flip=includeFlip?` scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`:'';
         if(t)return {position:'absolute',left:t.x+'px',top:t.y+'px',width:t.width+'px',height:t.height+'px',maxWidth:'none',objectFit:'fill',transform:`rotate(${-t.rotation}deg)${flip}`,transformOrigin:'center'};
         return {objectFit:c.fit==='cover'?'cover':'contain',objectPosition:`${(c.crop_x??.5)*100}% ${(c.crop_y??.5)*100}%`,transform:includeFlip?`scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`:''};
     },
-        flipImage(axis) { if(!this.imageTypes.includes(this.current?.type)||!['x','y'].includes(axis))return;this.checkpoint();const c=this.current.data.dados;c['flip_'+axis]=!c['flip_'+axis]; },
-        setFontSize(value) { const size=Number(value);if(!this.hasCapability(this.current,'text')||!Number.isFinite(size)||size<1||size>100)return;this.checkpoint();this.current.data.dados.font_size=size; },
+        flipImage(axis) { if(!this.imageTypes.includes(this.current?.type)||!['x','y'].includes(axis))return;this.checkpoint();const c=this.current.data.properties;c['flip_'+axis]=!c['flip_'+axis]; },
+        setFontSize(value) { const size=Number(value);if(!this.isText(this.current)||!Number.isFinite(size)||size<1||size>100)return;this.checkpoint();this.current.data.properties.font_size=size; },
         resizeGeometry(d,dx,dy,corner='se',modifiers={}) {
-        const a=-Number(d.rotacao_graus)*Math.PI/180, sx=corner.includes('w')?-1:1, sy=corner.includes('n')?-1:1;
+        const a=-Number(d.rotation_deg)*Math.PI/180, sx=corner.includes('w')?-1:1, sy=corner.includes('n')?-1:1;
         const lx=dx*Math.cos(a)+dy*Math.sin(a),ly=-dx*Math.sin(a)+dy*Math.cos(a);
         const snap=v=>this.snap(v);
-        const width=Number(d.largura_pt),height=Number(d.altura_pt),factor=modifiers.altKey?2:1;
+        const width=Number(d.width_pt),height=Number(d.height_pt),factor=modifiers.altKey?2:1;
         let w=Math.max(1,snap(width+sx*lx*factor)),h=Math.max(1,snap(height+sy*ly*factor));
         if(modifiers.shiftKey){
             const scale=Math.max(1/width,1/height,Math.abs(w/width-1)>=Math.abs(h/height-1)?w/width:h/height);
             w=width*scale;h=height*scale;
         }
-        const dw=w-Number(d.largura_pt),dh=h-Number(d.altura_pt);
-        if(modifiers.altKey)return {x_pt:Number(d.x_pt)-dw/2,y_pt:Number(d.y_pt)-dh/2,largura_pt:w,altura_pt:h};
-        return {x_pt:Number(d.x_pt)+(sx*dw*Math.cos(a)-sy*dh*Math.sin(a)-dw)/2,y_pt:Number(d.y_pt)+(sx*dw*Math.sin(a)+sy*dh*Math.cos(a)-dh)/2,largura_pt:w,altura_pt:h};
+        const dw=w-Number(d.width_pt),dh=h-Number(d.height_pt);
+        if(modifiers.altKey)return {x_pt:Number(d.x_pt)-dw/2,y_pt:Number(d.y_pt)-dh/2,width_pt:w,height_pt:h};
+        return {x_pt:Number(d.x_pt)+(sx*dw*Math.cos(a)-sy*dh*Math.sin(a)-dw)/2,y_pt:Number(d.y_pt)+(sx*dw*Math.sin(a)+sy*dh*Math.cos(a)-dh)/2,width_pt:w,height_pt:h};
     },
         key(e) {
         if(this.textEditing){if(e.key==='Escape'){e.preventDefault?.();e.stopPropagation?.();this.cancelTextEditing();}return;}
@@ -672,7 +634,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         zoomAt(value, clientX, clientY) {
             const stage=this.$refs.stage,paper=this.$refs.paper;
             if(!stage||!paper||this.gesture||this.saving||this.destroyed)return;
-            const next=Math.max(.25,Math.min(3,Number(value)));
+            const next=Math.max(this.minZoom,Math.min(this.maxZoom,Number(value)));
             if(!Number.isFinite(next)||next===this.zoom||!Number.isFinite(clientX)||!Number.isFinite(clientY))return;
             const rect=stage.getBoundingClientRect();
             const localX=clientX-rect.left-(stage.clientLeft||0),localY=clientY-rect.top-(stage.clientTop||0);
@@ -706,7 +668,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         pinchEnd(e) { e.preventDefault(); e.stopPropagation(); this.nativePinch=null; },
         drawingDefaults() { return {x1:0,y1:50,x2:100,y2:50,stroke:'#E60014',stroke_width:0.7,pattern:'solid',dash_length:4.25,gap_length:4.25}; },
         drawingOrientation() {
-        const d=this.current?.data.dados?.drawing||{};
+        const d=this.current?.data.properties?.drawing||{};
         if(Number(d.y1)===Number(d.y2))return 'horizontal';
         if(Number(d.x1)===Number(d.x2))return 'vertical';
         if(Number(d.x1)===0&&Number(d.x2)===100&&Number(d.y1)===0&&Number(d.y2)===100)return 'descending';
@@ -716,23 +678,23 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         setDrawingOrientation(value) {
         const points={horizontal:{x1:0,y1:50,x2:100,y2:50},vertical:{x1:50,y1:0,x2:50,y2:100},descending:{x1:0,y1:0,x2:100,y2:100},ascending:{x1:0,y1:100,x2:100,y2:0}}[value];
         if(this.current?.type!=='drawing'||!points)return;
-        this.checkpoint();Object.assign(this.current.data.dados.drawing,points);
+        this.checkpoint();Object.assign(this.current.data.properties.drawing,points);
     },
         get current() { return this.selected === null ? null : this.blocks[this.selected]; },
         snapshot() { return JSON.stringify(this.blocks); },
         checkpoint(snapshot=this.snapshot()) { this.undoStack.push(snapshot); if (this.undoStack.length > 60) this.undoStack.shift(); this.redoStack = []; this.dirty = true; },
         undo() { this.endGesture();if(this.textEditing)this.commitTextEditing();if (!this.undoStack.length) return; this.redoStack.push(this.snapshot()); this.blocks = JSON.parse(this.undoStack.pop()); this.prepare(); this.selected = null; this.cropIndex=null; this.inspectorInvalid=false; this.error=''; this.dirty = true; this.syncInspector(); },
         redo() { this.endGesture();if(this.textEditing)this.commitTextEditing();if (!this.redoStack.length) return; this.undoStack.push(this.snapshot()); this.blocks = JSON.parse(this.redoStack.pop()); this.prepare(); this.selected = null; this.cropIndex=null; this.inspectorInvalid=false; this.error=''; this.dirty = true; this.syncInspector(); },
-        normalize(b) { const d = b.data; d.largura_pt = Math.max(1, Math.min(this.pageWidth, Number(d.largura_pt)||1)); d.altura_pt = Math.max(1, Math.min(this.pageHeight, Number(d.altura_pt)||1)); d.x_pt = Math.max(0, Math.min(this.pageWidth-d.largura_pt, Number(d.x_pt)||0)); d.y_pt = Math.max(0, Math.min(this.pageHeight-d.altura_pt, Number(d.y_pt)||0)); d.rotacao_graus = Math.max(-360, Math.min(360, Number(d.rotacao_graus)||0)); },
-        duplicate() { if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); const b=JSON.parse(JSON.stringify(this.current)); b._key=this.nextKey++; delete b.data.id; b.data.nome+=' (cópia)'; b.data.x_pt=Number(b.data.x_pt)+12; b.data.y_pt=Number(b.data.y_pt)+12; this.normalize(b); this.blocks.push(b); this.selected=this.blocks.length-1; },
+        normalize(b) { const d = b.data; d.width_pt = Math.max(1, Math.min(this.pageWidth, Number(d.width_pt)||1)); d.height_pt = Math.max(1, Math.min(this.pageHeight, Number(d.height_pt)||1)); d.x_pt = Math.max(0, Math.min(this.pageWidth-d.width_pt, Number(d.x_pt)||0)); d.y_pt = Math.max(0, Math.min(this.pageHeight-d.height_pt, Number(d.y_pt)||0)); d.rotation_deg = Math.max(-360, Math.min(360, Number(d.rotation_deg)||0)); },
+        duplicate() { if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); const b=JSON.parse(JSON.stringify(this.current)); b._key=this.nextKey++; delete b.data.id; b.data.name+=' (copy)'; b.data.x_pt=Number(b.data.x_pt)+12; b.data.y_pt=Number(b.data.y_pt)+12; this.normalize(b); this.blocks.push(b); this.selected=this.blocks.length-1; },
         remove() { if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); this.blocks.splice(this.selected,1); this.selected=null; this.cropIndex=null; },
         layer(delta) { const i=this.selected, j=i+delta; if(i===null||j<0||j>=this.blocks.length)return; this.checkpoint(); [this.blocks[i],this.blocks[j]]=[this.blocks[j],this.blocks[i]]; this.selected=j; this.cropIndex=null; },
-        start(e,i,mode,corner='se') { if(e.button!==0||this.nativePinch||this.saving||this.isTextEditing(this.blocks[i])||e.target?.closest?.('[data-canvas-text-editor]'))return;if(this.textEditing)this.commitTextEditing(); e.preventDefault(); this.snapGuides=[]; this.selected=i; e.currentTarget.focus?.({preventScroll:true}); if(this.cropIndex!==i)this.cropIndex=null; if(this.cropIndex===i&&mode==='move')mode='crop'; const snapshot=this.snapshot(); const d=this.current.data; const r=this.$refs.paper.getBoundingClientRect(); this.gesture={mode,corner,snapshot,changed:false,x:e.clientX,y:e.clientY,d:JSON.parse(JSON.stringify(d)),cx:r.left+(Number(d.x_pt)+Number(d.largura_pt)/2)*this.zoom,cy:r.top+(Number(d.y_pt)+Number(d.altura_pt)/2)*this.zoom};
+        start(e,i,mode,corner='se') { if(e.button!==0||this.nativePinch||this.saving||this.isTextEditing(this.blocks[i])||e.target?.closest?.('[data-canvas-text-editor]'))return;if(this.textEditing)this.commitTextEditing(); e.preventDefault(); this.snapGuides=[]; this.selected=i; e.currentTarget.focus?.({preventScroll:true}); if(this.cropIndex!==i)this.cropIndex=null; if(this.cropIndex===i&&mode==='move')mode='crop'; const snapshot=this.snapshot(); const d=this.current.data; const r=this.$refs.paper.getBoundingClientRect(); this.gesture={mode,corner,snapshot,changed:false,x:e.clientX,y:e.clientY,d:JSON.parse(JSON.stringify(d)),cx:r.left+(Number(d.x_pt)+Number(d.width_pt)/2)*this.zoom,cy:r.top+(Number(d.y_pt)+Number(d.height_pt)/2)*this.zoom};
         if(this.cropIndex===i){
-            const t=d.dados.image_transform;
+            const t=d.properties.image_transform;
             this.gesture.mode='image-'+(mode==='crop'?'move':mode);
-            const a=-Number(d.rotacao_graus)*Math.PI/180;
-            const ox=Number(t.x)+Number(t.width)/2-Number(d.largura_pt)/2,oy=Number(t.y)+Number(t.height)/2-Number(d.altura_pt)/2;
+            const a=-Number(d.rotation_deg)*Math.PI/180;
+            const ox=Number(t.x)+Number(t.width)/2-Number(d.width_pt)/2,oy=Number(t.y)+Number(t.height)/2-Number(d.height_pt)/2;
             this.gesture.cx+=(ox*Math.cos(a)-oy*Math.sin(a))*this.zoom;
             this.gesture.cy+=(ox*Math.sin(a)+oy*Math.cos(a))*this.zoom;
         }
@@ -744,12 +706,12 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         },
         move(e) { if(!this.gesture||!this.current)return; const g=this.gesture,d=this.current.data,dx=(e.clientX-g.x)/this.zoom,dy=(e.clientY-g.y)/this.zoom; const snap=v=>this.snap(v);this.snapGuides=[];
         if(g.mode.startsWith('image-')){
-            const old=g.d.dados.image_transform,t=d.dados.image_transform;
-            const a=-Number(g.d.rotacao_graus)*Math.PI/180,lx=dx*Math.cos(a)+dy*Math.sin(a),ly=-dx*Math.sin(a)+dy*Math.cos(a);
+            const old=g.d.properties.image_transform,t=d.properties.image_transform;
+            const a=-Number(g.d.rotation_deg)*Math.PI/180,lx=dx*Math.cos(a)+dy*Math.sin(a),ly=-dx*Math.sin(a)+dy*Math.cos(a);
             if(g.mode==='image-move'){t.x=Number(old.x)+lx;t.y=Number(old.y)+ly;}
             if(g.mode==='image-resize'){
-                const next=this.resizeGeometry({x_pt:old.x,y_pt:old.y,largura_pt:old.width,altura_pt:old.height,rotacao_graus:old.rotation},lx,ly,g.corner,e);
-                Object.assign(t,{x:next.x_pt,y:next.y_pt,width:next.largura_pt,height:next.altura_pt});
+                const next=this.resizeGeometry({x_pt:old.x,y_pt:old.y,width_pt:old.width,height_pt:old.height,rotation_deg:old.rotation},lx,ly,g.corner,e);
+                Object.assign(t,{x:next.x_pt,y:next.y_pt,width:next.width_pt,height:next.height_pt});
             }
             if(g.mode==='image-rotate'){t.rotation=Number(old.rotation)-(Math.atan2(e.clientY-g.cy,e.clientX-g.cx)-g.angle)*180/Math.PI;if(e.shiftKey)t.rotation=Math.round(t.rotation/15)*15;t.rotation=((t.rotation+540)%360)-180;}
             this.checkpointGesture();this.syncPreview();
@@ -770,19 +732,20 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 const aligned=alignResize(next,g.d,g.corner,e,this.blocks,this.current._key,this.pageWidth,this.pageHeight,this.zoom);
                 next=aligned.geometry;this.snapGuides=aligned.guides;
             }
-            if(next.x_pt>=0&&next.y_pt>=0&&next.x_pt+next.largura_pt<=this.pageWidth&&next.y_pt+next.altura_pt<=this.pageHeight)Object.assign(d,next);
+            if(next.x_pt>=0&&next.y_pt>=0&&next.x_pt+next.width_pt<=this.pageWidth&&next.y_pt+next.height_pt<=this.pageHeight)Object.assign(d,next);
         }
-        if(g.mode==='rotate'){d.rotacao_graus=Number(g.d.rotacao_graus)-(Math.atan2(e.clientY-g.cy,e.clientX-g.cx)-g.angle)*180/Math.PI;if(e.shiftKey)d.rotacao_graus=Math.round(d.rotacao_graus/15)*15;}
+        if(g.mode==='rotate'){d.rotation_deg=Number(g.d.rotation_deg)-(Math.atan2(e.clientY-g.cy,e.clientX-g.cx)-g.angle)*180/Math.PI;if(e.shiftKey)d.rotation_deg=Math.round(d.rotation_deg/15)*15;}
         this.normalize(this.current);this.checkpointGesture();
         const bounds=elementBounds(d);
         this.snapGuides=this.snapGuides.filter(guide=>bounds[guide.axis].some(value=>Math.abs(value-guide.position)<.00001));
     },
-        style(b,i) { const d=b.data;return {left:d.x_pt+'px',top:d.y_pt+'px',width:d.largura_pt+'px',height:d.altura_pt+'px',transform:`rotate(${-Number(d.rotacao_graus)}deg)`,zIndex:i+1,opacity:d.visivel===false?.25:1,color:d.dados?.color||'#222',fontSize:(d.dados?.font_size||(b.type==='table'?8:12))+'px',textAlign:d.dados?.align||'center'}; },
+        style(b,i) { const d=b.data;return {left:d.x_pt+'px',top:d.y_pt+'px',width:d.width_pt+'px',height:d.height_pt+'px',transform:`rotate(${-Number(d.rotation_deg)}deg)`,zIndex:i+1,opacity:d.visible===false?.25:1,color:d.properties?.color||'#222',fontSize:(d.properties?.font_size||(b.type==='table'?8:12))+'px',textAlign:d.properties?.align||'center'}; },
         onPreviewLoad() {
         if (this.destroyed || !this.$refs.preview?.srcdoc) return;
         const doc=this.$refs.preview.contentDocument,page=doc?.querySelector('.page');
         if (!page) return;
         this.syncPreviewFonts(doc);
+        for(const node of this.previewNodes.values())if(node._canvasScope)globalThis.Alpine?.destroyTree(node);
         this.previewNodes=new Map(); this.previewSignatures=new Map();
         const first=page.querySelector('.block[data-editor-index]');
         this.previewAnchor=doc.createComment('canvas-editor-blocks');
@@ -791,8 +754,6 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             const block=this.blocks[Number(node.dataset.editorIndex)];
             if (!block) continue;
             this.previewNodes.set(block._key,node);
-            this.previewSignatures.set(block._key,this.contentSignature(block));
-            this.serverRenders.set(block._key,{signature:this.contentSignature(block),html:node.innerHTML});
         }
         this.previewReady=true;this.schedulePreview();
         doc.fonts.ready.then(()=>{ if(!this.destroyed && this.$refs.preview?.contentDocument===doc)this.previewLoaded=true; });
@@ -808,14 +769,6 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             if(this.previewFontStyle.textContent!==css)this.previewFontStyle.textContent=css;
         },
         escape(value) { return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
-        scheduleImage(b,node) {
-        if (!this.imageTypes.includes(b.type)) return;
-        const img=node.querySelector('.image'); if (!img) return;
-        const c=b.data.dados||{},t=c.image_transform;
-        img.style.cssText=t
-            ? `position:absolute;left:${Number(t.x)}pt;top:${Number(t.y)}pt;width:${Number(t.width)}pt;height:${Number(t.height)}pt;max-width:none;object-fit:fill;transform:rotate(${-Number(t.rotation)}deg) scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`
-            : `object-fit:${c.fit==='cover'?'cover':'contain'};object-position:${Number(c.crop_x??.5)*100}% ${Number(c.crop_y??.5)*100}%;transform:scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`;
-    },
         syncPreview() {
         if (this.destroyed || !this.previewReady||!this.previewAnchor?.isConnected) return;
         const doc=this.$refs.preview.contentDocument,visible=[],active=new Set();
@@ -823,33 +776,35 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             const key=b._key;active.add(key);
             let node=this.previewNodes.get(key);
             if (!node) { node=doc.createElement('div');this.previewNodes.set(key,node); }
-            node.className='block'+(this.hasCapability(b,'text')?' text':'')+(b.data.dados?.index_icon?' index-icon':'');
+            node.className='block'+(this.isText(b)?' text':'')+(b.data.properties?.index_icon?' index-icon':'');
             node.dataset.kind=b.type;node.dataset.editorIndex=index;
-            const d=b.data,c=d.dados||{},s=d.dados||{};
+            const d=b.data,c=d.properties||{};
             Object.assign(node.style,{
-                left:Number(d.x_pt)+'pt',top:Number(d.y_pt)+'pt',width:Number(d.largura_pt)+'pt',height:Number(d.altura_pt)+'pt',
-                transform:`rotate(${-Number(d.rotacao_graus||0)}deg)`,fontSize:Number(s.font_size??c.font_size??(b.type==='title'?14:b.type==='text'?9:8))+'pt',
-                color:/^#[a-f\d]{3,8}$/i.test(s.color??c.color??'')?(s.color??c.color):'#111111',textAlign:c.rich_text?.type==='doc'?'left':['left','center','right','justify'].includes(s.align??c.align)?(s.align??c.align):'center',
-                opacity:String(c.opacity??1),mixBlendMode:['normal','multiply','screen'].includes(c.blend_mode)?c.blend_mode:'normal',fontFamily:String(s.font??c.font??'').startsWith('Helvetica')?'Arial,sans-serif':'',visibility:this.isTextEditing(b)?'hidden':''
+                left:Number(d.x_pt)+'pt',top:Number(d.y_pt)+'pt',width:Number(d.width_pt)+'pt',height:Number(d.height_pt)+'pt',
+                transform:`rotate(${-Number(d.rotation_deg||0)}deg)`,fontSize:Number(c.font_size??(b.type==='title'?14:b.type==='text'?9:8))+'pt',
+                color:/^#[a-f\d]{3,8}$/i.test(c.color??'')?(c.color):'#111111',textAlign:c.rich_text?.type==='doc'?'left':['left','center','right','justify'].includes(c.align)?(c.align):'center',
+                opacity:String(c.opacity??1),mixBlendMode:['normal','multiply','screen'].includes(c.blend_mode)?c.blend_mode:'normal',fontFamily:'',visibility:''
             });
             const signature=this.contentSignature(b);
             if (this.previewSignatures.get(key)!==signature) {
-                node.innerHTML=this.renderContent(b)+this.renderLink(b);
+                if(!Object.hasOwn(this.templates,b.type)){this.error=this.messages.missing_template.replace(':type', b.type);return;}
+                if(!node._canvasScope || node._canvasTemplate!==this.templates[b.type]){
+                    Alpine.destroyTree(node);
+                    node._canvasTemplate=this.templates[b.type];
+                    node.innerHTML=this.templates[b.type];
+                    node._canvasScope=Alpine.reactive({data:this.viewData(b)});
+                    Alpine.addScopeToNode(node,node._canvasScope);
+                    Alpine.initTree(node);
+                }else node._canvasScope.data=this.viewData(b);
                 this.previewSignatures.set(key,signature);
             }
-            this.scheduleImage(b,node);
-            if (d.visivel!==false) visible.push(node); else node.remove();
+            const text=node.querySelector('.canvas-rich-text'),editing=this.isTextEditorReady(b);
+            if(text)text.style.visibility=editing?'hidden':'';
+            else node.style.visibility=editing?'hidden':'';
+            if (d.visible!==false) visible.push(node); else node.remove();
         });
-        for (const [key,node] of this.previewNodes) if (!active.has(key)) {node.remove();this.previewNodes.delete(key);this.previewSignatures.delete(key);}
+        for (const [key,node] of this.previewNodes) if (!active.has(key)) {if(node._canvasScope)globalThis.Alpine?.destroyTree(node);node.remove();this.previewNodes.delete(key);this.previewSignatures.delete(key);}
         this.previewAnchor.after(...visible);
-    },
-        renderDrawing(b) {
-        const d=b.data.dados?.drawing||{},w=Math.max(0.1,Number(b.data.largura_pt)||0.1),h=Math.max(0.1,Number(b.data.altura_pt)||0.1);
-        const number=(key,fallback,min,max)=>d[key]!==null&&d[key]!==''&&Number.isFinite(Number(d[key]))?Math.max(min,Math.min(max,Number(d[key]))):fallback;
-        const stroke=/^#(?:[a-f\d]{3}|[a-f\d]{6})$/i.test(d.stroke||'')?d.stroke:'#E60014';
-        const weight=number('stroke_width',0.7,0.1,20),pattern=d.pattern||'solid';
-        const dashes=pattern==='dotted'?`0 ${number('gap_length',4.25,0.1,100)}`:pattern==='dashed'?`${number('dash_length',4.25,0.1,100)} ${number('gap_length',4.25,0.1,100)}`:'none';
-        return `<svg class="drawing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><line x1="${number('x1',0,0,100)*w/100}" y1="${number('y1',50,0,100)*h/100}" x2="${number('x2',100,0,100)*w/100}" y2="${number('y2',50,0,100)*h/100}" stroke="${stroke}" stroke-width="${weight}" stroke-dasharray="${dashes}" stroke-linecap="${pattern==='dotted'?'round':'butt'}" fill="none" /></svg>`;
     },
         async save(wire) {
         if(this.saving||this.imageUploading)return;
@@ -859,25 +814,23 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         this.saving=true;this.error='';this.endGesture();
         try{
             const keys=this.blocks.map(b=>b._key),payload=JSON.parse(this.snapshot());
-            for(const b of payload){delete b._key;if(b.data.imagem_origem==='')b.data.imagem_origem=null;}
-            const saved=await wire.salvar(payload);
+            for(const b of payload){delete b._key;if(b.data.image_id==='')b.data.image_id=null;}
+            const saved=await wire.save(payload);
             if(this.destroyed)return;
             // The builder returns the saved layer order, including IDs for new elements.
             // Keep preview identities so saving does not replace loaded image nodes.
             this.blocks=saved.map((b,index)=>({...b,_key:keys[index]}));
             this.prepare();this.syncPreview();
             this.dirty=false;this.undoStack=[];this.redoStack=[];
-        }catch(e){this.error='Não foi possível salvar. Verifique as mensagens de validação; se outra janela alterou a página, recarregue.';}
+        }catch(e){this.error=this.messages.save_error;}
         finally{this.saving=false;}
     },
         prepare() {
             for (const b of this.blocks) {
                 b._key ??= this.nextKey++;
                 this.nextKey = Math.max(this.nextKey, Number(b._key) + 1);
-                b.data = canonicalElementData(b.data);
-                if (b.type === 'drawing') b.data.dados.drawing = {...this.drawingDefaults(), ...(b.data.dados.drawing || {})};
-                if (b.type === 'data-table') { b.data.dados.rows ??= []; }
-                this.elementTypes[b.type]?.prepare?.call(this, b);
+                b.data.properties ??= {};
+                if (b.type === 'drawing') b.data.properties.drawing = {...this.drawingDefaults(), ...(b.data.properties.drawing || {})};
             }
         },
         add(type) {
@@ -886,9 +839,9 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 if(this.destroyed)return null;
                 this.checkpoint();
                 const data={
-                    nome:this.labels[type],x_pt:Math.min(40,this.pageWidth/10),y_pt:Math.min(40,this.pageHeight/10),
-                    largura_pt:Math.min(200,this.pageWidth),altura_pt:Math.min((this.elementTypes[type]?.kind==='drawing' || type==='drawing')?12:100,this.pageHeight),
-                    rotacao_graus:0,visivel:true,imagem_origem:null,vinculos:[],dados:{},...initialized?.data,
+                    name:this.labels[type],x_pt:Math.min(40,this.pageWidth/10),y_pt:Math.min(40,this.pageHeight/10),
+                    width_pt:Math.min(200,this.pageWidth),height_pt:Math.min((this.elementTypes[type]?.kind==='drawing' || type==='drawing')?12:100,this.pageHeight),
+                    rotation_deg:0,visible:true,image_id:null,references:[],properties:{},...initialized?.data,
                 };
                 const block={_key:this.nextKey++,type,data};
                 this.blocks.push(block);this.selected=this.blocks.length-1;
@@ -896,42 +849,28 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 return block;
             };
             // Server schemas are the sole source of initial values in a mounted editor.
-            if(!this.$wire?.createElement)return insert({data:{dados:{}}});
+            if(!this.$wire?.createElement)return insert({data:{properties:{}}});
             this.adding=true;
-            return this.$wire.createElement(type).then(insert).catch(()=>{this.error='Não foi possível criar o elemento.';return null;}).finally(()=>{this.adding=false;});
+            return this.$wire.createElement(type).then(insert).catch(()=>{this.error=this.messages.create_error;return null;}).finally(()=>{this.adding=false;});
         },
-        image(b) { const first=this.mediaCollection(b);return this.safeImageUrl(this.mediaImages(b,first?.name)[0]?.image ?? b.data.imagem_url ?? ''); },
+        image(b) { const first=this.mediaCollection(b),rendered=this.previewNodes.get(b._key)?.querySelector('[data-canvas-image]');return this.safeImageUrl(this.mediaImages(b,first?.name)[0]?.image ?? (rendered ? rendered.getAttribute('src') || '' : null) ?? b.data.image_url ?? b.data.properties?.image_url ?? ''); },
         safeImageUrl(value) { const url=String(value || ''); return (/^https?:/i.test(url) || url.startsWith('blob:') || (url.startsWith('/') && !url.startsWith('//')) || new RegExp('^data:image/(?:png|jpeg|webp|gif);base64,', 'i').test(url)) ? url : ''; },
-        renderLink(b) {
-            const url=String(b.data.dados?.link_url || '');
-            try { if(!['http:', 'https:'].includes(new URL(url).protocol)) return ''; } catch { return ''; }
-            return `<a class="block-link" href="${this.escape(url)}" aria-label="Abrir link"></a>`;
-        },
-        text(b) { return b.data.dados?.text ?? ''; },
+        text(b) { return this.previewNodes.get(b._key)?.querySelector('[data-canvas-text]')?.textContent ?? b.data.properties?.text ?? ''; },
         contentSignature(b) { const {id, ...data} = b.data; return JSON.stringify([b.type, data,this.isTextEditing(b)?this.textEditing.html:null]); },
-        renderContent(b) {
-            const metadata=this.elementTypes[b.type],custom=metadata?.render;
-            if (custom) return custom.call(this, b);
-            if(metadata && Object.hasOwn(metadata,'local_renderer') && !['text','image','drawing','data-table'].includes(metadata.local_renderer)){const cached=this.serverRenders.get(b._key);this.scheduleElementRender(b);return cached?.html ?? '';}
-            const c=b.data.dados || {};
-            if (['title', 'text'].includes(b.type)) {
-                const background=/^#(?:[a-f\d]{3}|[a-f\d]{6})$/i.test(c.background_color || '') ? c.background_color : 'transparent';
-                return `<div class="text-content" style="font-weight:${c.rich_text?.type==='doc'?400:(c.bold ?? (b.type === 'title'))?700:400};font-style:${c.rich_text?.type==='doc'?'normal':c.italic?'italic':'normal'};line-height:${Math.max(.5,Math.min(10,Number(c.leading ?? 1.25)))};column-count:${Math.max(1,Math.min(12,Math.trunc(Number(c.columns ?? 1))))};background:${background};padding:${Math.max(0,Math.min(100,Number(c.padding)||0))}pt;border-radius:${Math.max(0,Math.min(100,Number(c.border_radius)||0))}pt"><div class="canvas-rich-text">${this.textHtml(b)}</div></div>`;
-            }
-            if (this.imageTypes.includes(b.type)) { const url=this.image(b); return `<div class="image-frame">${url ? `<img class="image" src="${this.escape(url)}" alt="">` : '<span class="missing">Selecione uma imagem</span>'}</div>`; }
-            if (b.type === 'drawing') return this.renderDrawing(b);
-            if (['data-table', 'table'].includes(b.type)) return this.renderDataTable(b);
-            const cached=this.serverRenders.get(b._key);
-            this.scheduleElementRender(b);
-            return cached?.html ?? '';
+        viewData(b) {
+            const c=b.data.properties || {},d=b.data;
+            const media=Object.fromEntries(this.mediaCollections(b).map(collection=>[collection.name,collection.max_files>1?this.mediaImages(b,collection.name):(this.mediaImages(b,collection.name)[0] || {})]));
+            const data={...this.documentData,...c,type:b.type,geometry:{x:Number(d.x_pt),y:Number(d.y_pt),width:Number(d.width_pt),height:Number(d.height_pt),rotation:Number(d.rotation_deg || 0)},media,
+                text:c.text ?? '',html:this.textHtml(b),image_url:this.safeImageUrl(this.image(b)),columns:c.columns ?? [],rows:c.rows ?? []};
+            try {data.link_url=['http:', 'https:'].includes(new URL(c.link_url).protocol)?c.link_url:'';} catch {data.link_url='';}
+            data.text_style={textAlign:'left',fontWeight:400,fontStyle:'normal',lineHeight:Math.max(.5,Math.min(10,Number(c.leading ?? 1.25))),columnCount:Math.max(1,Math.min(12,Math.trunc(Number(c.columns ?? 1)))),backgroundColor:/^#[a-f\d]{3,8}$/i.test(c.background_color || '')?c.background_color:'transparent',padding:Math.max(0,Math.min(100,Number(c.padding)||0))+'pt',borderRadius:Math.max(0,Math.min(100,Number(c.border_radius)||0))+'pt'};
+            const t=c.image_transform;
+            data.image_style=t?{position:'absolute',left:Number(t.x)+'pt',top:Number(t.y)+'pt',width:Number(t.width)+'pt',height:Number(t.height)+'pt',maxWidth:'none',objectFit:'fill',transform:`rotate(${-Number(t.rotation)}deg) scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`}:{objectFit:c.fit==='cover'?'cover':'contain',objectPosition:`${Number(c.crop_x??.5)*100}% ${Number(c.crop_y??.5)*100}%`,transform:`scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`};
+            const drawing=c.drawing || {},number=(key,fallback,min,max)=>drawing[key]!=null&&drawing[key]!==''&&Number.isFinite(Number(drawing[key]))?Math.max(min,Math.min(max,Number(drawing[key]))):fallback;
+            data.line={x1:number('x1',0,0,100)*data.geometry.width/100,y1:number('y1',50,0,100)*data.geometry.height/100,x2:number('x2',100,0,100)*data.geometry.width/100,y2:number('y2',50,0,100)*data.geometry.height/100,stroke:/^#[a-f\d]{3,6}$/i.test(drawing.stroke || '')?drawing.stroke:'#E60014',weight:number('stroke_width',.7,.1,20),dashes:drawing.pattern==='dotted'?`0 ${number('gap_length',4.25,.1,100)}`:drawing.pattern==='dashed'?`${number('dash_length',4.25,.1,100)} ${number('gap_length',4.25,.1,100)}`:'none',cap:drawing.pattern==='dotted'?'round':'butt'};
+            return data;
         },
-        renderDataTable(b) {
-            const columns=b.data.dados?.columns || [], rows=b.data.dados?.rows || [];
-            return '<table class="data-table" style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:inherit"><thead><tr>' + columns.map(c=>'<th scope="col" style="border:1px solid #d1d5db;padding:4pt 6pt;text-align:left;background:#f3f4f6;font-weight:600;overflow-wrap:anywhere">'+this.escape(c.label)+'</th>').join('') + '</tr></thead><tbody>' + rows.map(row=>'<tr>'+columns.map(c=>'<td style="border:1px solid #d1d5db;padding:4pt 6pt;text-align:left;vertical-align:top;overflow-wrap:anywhere">'+this.escape(row[c.field])+'</td>').join('')+'</tr>').join('') + '</tbody></table>';
-        },
-        addDataRow() { if(!['data-table', 'table'].includes(this.current?.type)) return; this.checkpoint(); this.current.data.dados.rows.push({}); },
-        destroy() { this.endGesture();if(this.inlineFocusTimer!==null)clearTimeout(this.inlineFocusTimer);this.inlineFocusTimer=null;if(this.inlineMountTimer!==null)clearTimeout(this.inlineMountTimer);this.inlineMountTimer=null;this.destroyed=true;this.disposeZoomSlider?.();this.disposeZoomSlider=null;this.disposeEditorViewport?.();this.disposeEditorViewport=null; this.previewReady=false; this.gesture=null; this.textEditing=null;this.previewFontStyle?.remove();this.previewFontStyle=null;if(this.previewFrame !== null)cancelAnimationFrame(this.previewFrame); this.previewFrame=null; if(typeof this.disposeWatch === 'function')this.disposeWatch();if(typeof this.disposeSelectionWatch === 'function')this.disposeSelectionWatch(); this.disposeWatch=null;this.disposeSelectionWatch=null; if(typeof this.disposeInspectorWatch==='function')this.disposeInspectorWatch();if(this.inspectorTimer!==null)clearTimeout(this.inspectorTimer);for(const timer of this.serverRenderTimers.values())clearTimeout(timer);this.serverRenderTimers.clear();this.serverRenders.clear();this.serverRenderRequests.clear();this.previewNodes.clear(); this.previewSignatures.clear(); },
+        destroy() { this.endGesture();if(this.inlineFocusTimer!==null)clearTimeout(this.inlineFocusTimer);this.inlineFocusTimer=null;if(this.inlineMountTimer!==null)clearTimeout(this.inlineMountTimer);this.inlineMountTimer=null;this.destroyed=true;this.disposeZoomSlider?.();this.disposeZoomSlider=null;this.disposeEditorViewport?.();this.disposeEditorViewport=null; this.previewReady=false; this.gesture=null; this.textEditing=null;this.previewFontStyle?.remove();this.previewFontStyle=null;if(this.previewFrame !== null)cancelAnimationFrame(this.previewFrame); this.previewFrame=null; if(typeof this.disposeWatch === 'function')this.disposeWatch();if(typeof this.disposeSelectionWatch === 'function')this.disposeSelectionWatch(); this.disposeWatch=null;this.disposeSelectionWatch=null; if(typeof this.disposeInspectorWatch==='function')this.disposeInspectorWatch();for(const node of this.previewNodes.values())if(node._canvasScope)globalThis.Alpine?.destroyTree(node);this.previewNodes.clear(); this.previewSignatures.clear(); },
     };
-    if (options.extension) Object.defineProperties(state, Object.getOwnPropertyDescriptors(options.extension(state)));
     return state;
 }

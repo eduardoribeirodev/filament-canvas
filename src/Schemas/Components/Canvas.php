@@ -3,9 +3,12 @@
 namespace EduardoRibeiroDev\FilamentCanvas\Schemas\Components;
 
 use Closure;
+use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Support\EditorConfiguration;
 use Filament\Facades\Filament;
 use Filament\Schemas\Components\Component;
+use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 
 /** Embed the document editor in a Schema; it keeps its own save action. */
 class Canvas extends Component
@@ -17,6 +20,8 @@ class Canvas extends Component
     protected string|int|Closure $documentId;
 
     protected array $canvasOptions = [];
+
+    protected Model|Closure|null $canvasRecord = null;
 
     public static function make(): static
     {
@@ -30,6 +35,13 @@ class Canvas extends Component
     {
         $this->documentType = $type;
         $this->documentId = $id;
+
+        return $this;
+    }
+
+    public function record(Model|Closure $record): static
+    {
+        $this->canvasRecord = $record;
 
         return $this;
     }
@@ -62,13 +74,6 @@ class Canvas extends Component
         return $this;
     }
 
-    public function assetLibrary(string $library): static
-    {
-        $this->canvasOptions['assetLibrary'] = $library;
-
-        return $this;
-    }
-
     public function editorView(string $view): static
     {
         $this->canvasOptions['editorView'] = $view;
@@ -85,12 +90,32 @@ class Canvas extends Component
 
     public function getEditorParameters(): array
     {
-        $id = $this->evaluate($this->documentId);
+        $type = $this->documentType ?? null;
+        $options = $this->canvasOptions;
+        if ($this->canvasRecord !== null) {
+            $record = $this->evaluate($this->canvasRecord);
+            if (
+                ! $record instanceof Model
+                || ! $record instanceof CanvasOwner
+                || ! $record->exists
+                || $record->getKey() === null
+            ) {
+                throw new InvalidArgumentException('The canvas record must be a saved model implementing CanvasOwner.');
+            }
+
+            $type = $record::class;
+            $id = $record->getKey();
+            $options['model'] = $type;
+        } else {
+            $id = $this->evaluate($this->documentId);
+        }
+        $panelId = Filament::getCurrentPanel()?->getId();
 
         return [
-            'documentType' => $this->documentType, 'documentId' => $id,
-            'panelId' => Filament::getCurrentPanel()?->getId(),
-            'configuration' => $this->canvasOptions === [] ? null : EditorConfiguration::encode($this->documentType, $id, $this->canvasOptions, Filament::getCurrentPanel()?->getId()),
+            'documentType' => $type,
+            'documentId' => $id,
+            'panelId' => $panelId,
+            'configuration' => $options === [] ? null : EditorConfiguration::encode($type, $id, $options, $panelId),
         ];
     }
 }

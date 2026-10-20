@@ -48,8 +48,12 @@ class EloquentDocumentStore implements DocumentStore
 
     public function load(EditorContext $context): CanvasDocument
     {
-        $this->authorize($context, 'view');
         $owner = $this->owner($context);
+        if (method_exists($owner, 'getCanvas')) {
+            return $this->usingElements(fn () => $owner->getCanvas($context->user));
+        }
+
+        $this->authorize($context, 'view');
         $blocks = $this->usingElements(fn () => app(ElementPersistence::class)->load($owner));
         [$width, $height] = $owner->canvasSize();
 
@@ -58,6 +62,11 @@ class EloquentDocumentStore implements DocumentStore
 
     public function save(EditorContext $context, array $blocks, string $expectedRevision): SaveResult
     {
+        $owner = $this->owner($context);
+        if (method_exists($owner, 'saveCanvas')) {
+            return $this->usingElements(fn () => $owner->saveCanvas($blocks, $expectedRevision, $context->user));
+        }
+
         $this->authorize($context, 'update');
         $saved = $this->usingElements(fn () => app(ElementPersistence::class)->save($this->owner($context), $blocks, $expectedRevision, $context));
 

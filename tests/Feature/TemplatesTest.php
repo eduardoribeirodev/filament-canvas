@@ -72,8 +72,9 @@ class TemplatesTest extends TestCase
         $editor = Livewire::test(CanvasEditor::class, $parameters);
         $html = $editor->instance()->render()->getData()['previewHtml'];
         $this->assertStringContainsString('background:#fff', $html);
+        $this->assertFalse($editor->instance()->render()->getData()['canUploadAssets']);
         $editor->call('save', [$this->templatesBlock()])->assertHasNoErrors();
-        $this->assertSame('Texto salvo', $this->templatesOwner->canvasElements()->first()->dados['text']);
+        $this->assertSame('Text salvo', $this->templatesOwner->canvasElements()->first()->properties['text']);
         Livewire::test(CanvasEditor::class, CanvasTemplatePage::editorParameters($this->templatesOwner->id))->assertOk()->call('preview', [$this->templatesBlock()])->assertHasNoErrors();
         $this->assertSame('filament-canvas::templates.blank', $plugin->getTemplate());
     }
@@ -86,10 +87,10 @@ class TemplatesTest extends TestCase
         $this->assertSame(['text', 'notice'], array_keys($view['elementTypes']));
         $this->assertStringContainsString('data-template="page"', $view['previewHtml']);
         $block = $this->templatesBlock('notice');
-        $block['data']['dados']['badge'] = 'AK';
+        $block['data']['properties']['badge'] = 'AK';
         $editor->call('save', [$block])->assertHasNoErrors();
-        $this->assertSame('AK', $this->templatesOwner->canvasElements()->first()->dados['badge']);
-        $editor->call('renderElement', $block)->assertHasNoErrors();
+        $this->assertSame('AK', $this->templatesOwner->canvasElements()->first()->properties['badge']);
+        $this->assertArrayHasKey('notice', $editor->instance()->render()->getData()['elementTemplates']);
         Livewire::test(CanvasEditor::class, CanvasTemplateOverridePage::editorParameters($this->templatesOwner->id))->assertOk();
         $this->assertNotContains('notice', ElementRegistry::forOwner($this->templatesOwner)->types());
         $other = CanvasTemplateDocument::create();
@@ -106,14 +107,14 @@ class TemplatesTest extends TestCase
         $this->assertContains('text', $types);
         $this->assertContains('notice', $types);
         $invalid = $this->templatesBlock('notice');
-        $editor->call('save', [$invalid])->assertHasErrors(['blocks.0.data.dados.badge' => 'required']);
+        $editor->call('save', [$invalid])->assertHasErrors(['blocks.0.data.properties.badge' => 'required']);
         $this->assertSame(0, $this->templatesOwner->canvasElements()->count());
-        $invalid['data']['dados']['badge'] = 'Too long to save';
-        $editor->call('save', [$invalid])->assertHasErrors(['blocks.0.data.dados.badge' => 'max']);
+        $invalid['data']['properties']['badge'] = 'Too long to save';
+        $editor->call('save', [$invalid])->assertHasErrors(['blocks.0.data.properties.badge' => 'max']);
         $valid = $this->templatesBlock('notice');
-        $valid['data']['dados']['badge'] = 'AK';
+        $valid['data']['properties']['badge'] = 'AK';
         $editor->call('save', [$valid])->assertHasNoErrors();
-        $this->assertSame('notice', $this->templatesOwner->canvasElements()->first()->tipo);
+        $this->assertSame('notice', $this->templatesOwner->canvasElements()->first()->type);
     }
     public function test_schema_can_bind_an_owner_and_preserve_its_options_across_livewire_requests(): void
     {
@@ -121,7 +122,7 @@ class TemplatesTest extends TestCase
         $parameters = Canvas::make()->owner(CanvasTemplateDocument::class, $this->templatesOwner->id)->template('canvas-test::page')->elements([TextElement::class])->getEditorParameters();
         $editor = Livewire::test(CanvasEditor::class, $parameters)->call('save', [$this->templatesBlock()])->assertHasNoErrors();
         $this->assertStringContainsString('data-template="page"', $editor->instance()->render()->getData()['previewHtml']);
-        $this->assertStringContainsString('data-note="Texto salvo"', $editor->instance()->render()->getData()['previewHtml']);
+        $this->assertStringContainsString('data-note="Text salvo"', $editor->instance()->render()->getData()['previewHtml']);
     }
     public function test_server_configuration_cannot_be_tampered_with_or_reused_for_another_record(): void
     {
@@ -140,13 +141,160 @@ class TemplatesTest extends TestCase
         $context = new EditorContext(new DocumentReference('document', $this->templatesOwner->id), auth()->user());
         $document = new CanvasDocument([$this->templatesBlock()], 300, 200);
         $preview = $plugin->resolvePreviewRenderer('document')->render($document, $context);
-        $output = $plugin->resolveRenderer('document')->renderOutput(['page_size' => [300, 200], 'note' => 'Texto salvo'], ['blocks' => '']);
-        $this->assertStringContainsString('data-template="page" data-note="Texto salvo"', $preview);
-        $this->assertStringContainsString('data-template="page" data-note="Texto salvo"', $output);
+        $output = $plugin->resolveRenderer('document')->renderOutput(['page_size' => [300, 200], 'note' => 'Text salvo'], ['blocks' => '']);
+        $this->assertStringContainsString('data-template="page" data-note="Text salvo"', $preview);
+        $this->assertStringContainsString('data-template="page" data-note="Text salvo"', $output);
         $this->assertStringContainsString('zoom:.75', $preview);
         $this->assertStringNotContainsString('zoom:.75', $output);
         $this->assertStringContainsString('@page{size:300pt 200pt', $output);
     }
+    public function test_model_renders_saved_canvas_with_panel_template_and_render_data(): void
+    {
+        $this->templatesPanel(CanvasPlugin::make()->template('canvas-test::page'));
+        app(\EduardoRibeiroDev\FilamentCanvas\Persistence\ElementPersistence::class)
+            ->save($this->templatesOwner, [$this->templatesBlock()]);
+
+        $html = $this->templatesOwner->renderCanvas();
+
+        $this->assertStringContainsString('data-template="page" data-note="Text salvo"', $html);
+        $this->assertStringContainsString('data-kind="text"', $html);
+        $this->assertStringNotContainsString('zoom:.75', $html);
+    }
+
+    public function test_model_can_override_template_without_changing_panel_defaults(): void
+    {
+        $plugin = CanvasPlugin::make()->template('canvas-test::panel');
+        $this->templatesPanel($plugin);
+
+        $this->assertStringContainsString('data-template="page"', $this->templatesOwner->renderCanvas('canvas-test::page'));
+        $this->assertStringContainsString('data-template="panel"', $this->templatesOwner->renderCanvas());
+        $this->assertSame('canvas-test::panel', $plugin->getTemplate());
+    }
+
+    public function test_model_can_render_without_a_current_panel(): void
+    {
+        Filament::setCurrentPanel(null);
+
+        $this->assertStringContainsString('background:#fff', $this->templatesOwner->renderCanvas());
+    }
+
+    public function test_model_render_checks_permissions_for_the_explicit_user(): void
+    {
+        $user = (new User())->forceFill(['id' => 2]);
+        Gate::swap(new \Illuminate\Auth\Access\Gate(app(), fn () => auth()->user()));
+        Gate::before(fn ($authenticatedUser) => $authenticatedUser->getAuthIdentifier() !== 2);
+
+        $this->expectException(\Illuminate\Auth\Access\AuthorizationException::class);
+
+        $this->templatesOwner->renderCanvas(user: $user);
+    }
+
+    public function test_unsaved_model_cannot_render_canvas(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Save the model before rendering its canvas.');
+
+        (new CanvasTemplateDocument())->renderCanvas();
+    }
+
+    public function test_editor_and_output_follow_locale_without_translating_saved_content(): void
+    {
+        app()->setLocale('pt_BR');
+        $this->templatesPanel(CanvasPlugin::make());
+        app(\EduardoRibeiroDev\FilamentCanvas\Persistence\ElementPersistence::class)
+            ->save($this->templatesOwner, [$this->templatesBlock()]);
+
+        Livewire::test(CanvasEditor::class, CanvasTemplatePage::editorParameters($this->templatesOwner->id))
+            ->assertSee('Editor visual')
+            ->assertSee('Propriedades')
+            ->assertSee('Camadas')
+            ->assertSee('Posição e dimensões')
+            ->assertDontSee('filament-canvas::canvas.');
+
+        $html = $this->templatesOwner->renderCanvas();
+        $this->assertStringContainsString('lang="pt-BR"', $html);
+        $this->assertSame('Text salvo', $this->templatesOwner->canvasElements()->first()->properties['text']);
+    }
+
+    public function test_model_api_loads_saves_and_renders_without_a_panel(): void
+    {
+        Filament::setCurrentPanel(null);
+        $document = $this->templatesOwner->getCanvas();
+        $this->templatesOwner->load('canvasElements');
+
+        $saved = $this->templatesOwner->saveCanvas(
+            [$this->templatesBlock()],
+            expectedRevision: $document->revision,
+        );
+
+        $this->assertCount(1, $saved->blocks);
+        $this->assertSame($saved->revision, $this->templatesOwner->getCanvas()->revision);
+        $this->assertSame('Text salvo', $this->templatesOwner->getCanvas()->blocks[0]['data']['properties']['text']);
+        $this->assertCount(1, $this->templatesOwner->canvasElements);
+        $this->assertStringContainsString('Text salvo', $this->templatesOwner->renderCanvas());
+    }
+
+    public function test_model_save_rejects_stale_revision_without_overwriting_content(): void
+    {
+        $initial = $this->templatesOwner->getCanvas();
+        $saved = $this->templatesOwner->saveCanvas([$this->templatesBlock()], $initial->revision);
+
+        try {
+            $this->templatesOwner->saveCanvas([], $initial->revision);
+            $this->fail('A stale revision must be rejected.');
+        } catch (\Illuminate\Validation\ValidationException) {
+            $this->assertSame($saved->blocks, $this->templatesOwner->getCanvas()->blocks);
+        }
+    }
+
+    public function test_model_save_uses_the_supplied_users_permissions(): void
+    {
+        $revision = $this->templatesOwner->getCanvas()->revision;
+        $user = (new User())->forceFill(['id' => 2]);
+        Gate::swap(new \Illuminate\Auth\Access\Gate(app(), fn () => auth()->user()));
+        Gate::before(fn ($authenticatedUser) => $authenticatedUser->getAuthIdentifier() !== 2);
+
+        try {
+            $this->templatesOwner->saveCanvas([$this->templatesBlock()], $revision, user: $user);
+            $this->fail('Saving must check the supplied user.');
+        } catch (\Illuminate\Auth\Access\AuthorizationException) {
+            $this->assertSame(0, $this->templatesOwner->canvasElements()->count());
+        }
+    }
+
+    public function test_record_binding_and_model_configuration_are_shared_by_editor_and_output(): void
+    {
+        $plugin = CanvasPlugin::make()->template('canvas-test::panel')->elements([TitleElement::class]);
+        $this->templatesPanel($plugin);
+        $owner = CanvasModelConfiguredDocument::create();
+        $parameters = Canvas::make()->record($owner)->getEditorParameters();
+        $this->assertSame(CanvasModelConfiguredDocument::class, $parameters['documentType']);
+        $this->assertSame($owner->id, $parameters['documentId']);
+
+        $editor = Livewire::test(CanvasEditor::class, $parameters);
+        $view = $editor->instance()->render()->getData();
+        $this->assertSame(['text', 'notice'], array_keys($view['elementTypes']));
+        $this->assertStringContainsString('data-template="page"', $view['previewHtml']);
+        $editor->call('save', [$this->templatesBlock()])->assertHasNoErrors();
+
+        $this->assertStringContainsString('data-template="page" data-note="Text salvo"', $owner->renderCanvas());
+        $this->assertSame('canvas-test::panel', $plugin->getTemplate());
+        $this->assertStringContainsString('data-template="panel"', $owner->renderCanvas('canvas-test::panel'));
+        Filament::setCurrentPanel(null);
+        $this->assertStringContainsString('data-template="page"', $owner->renderCanvas());
+    }
+
+    public function test_record_binding_accepts_a_closure_and_rejects_unsaved_records(): void
+    {
+        $this->assertSame(
+            $this->templatesOwner->id,
+            Canvas::make()->record(fn () => $this->templatesOwner)->getEditorParameters()['documentId'],
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        Canvas::make()->record(new CanvasTemplateDocument)->getEditorParameters();
+    }
+
     private function templatesPanel(CanvasPlugin $plugin): void
     {
         $panel = Panel::make()->id('canvas-templates')->path('canvas-templates')->plugin($plugin)->resources([CanvasTemplateResource::class]);
@@ -157,7 +305,7 @@ class TemplatesTest extends TestCase
     }
     private function templatesBlock(string $type = 'text'): array
     {
-        return ['type' => $type, 'data' => ['nome' => 'Texto', 'x_pt' => 10, 'y_pt' => 10, 'largura_pt' => 100, 'altura_pt' => 50, 'rotacao_graus' => 0, 'visivel' => true, 'dados' => ['text' => 'Texto salvo', 'font_size' => 16]]];
+        return ['type' => $type, 'data' => ['name' => 'Text', 'x_pt' => 10, 'y_pt' => 10, 'width_pt' => 100, 'height_pt' => 50, 'rotation_deg' => 0, 'visible' => true, 'properties' => ['text' => 'Text salvo', 'font_size' => 16]]];
     }
 }
 class CanvasTemplateDocument extends Model implements CanvasOwner, CanvasRenderData
@@ -167,9 +315,22 @@ class CanvasTemplateDocument extends Model implements CanvasOwner, CanvasRenderD
     protected $guarded = ['id'];
     public function canvasRenderData(CanvasDocument $document, EditorContext $context): array
     {
-        return ['note' => $document->blocks[0]['data']['dados']['text'] ?? ''];
+        return ['note' => $document->blocks[0]['data']['properties']['text'] ?? ''];
     }
 }
+class CanvasModelConfiguredDocument extends CanvasTemplateDocument
+{
+    public function canvasTemplate(): string
+    {
+        return 'canvas-test::page';
+    }
+
+    public function canvasElementsAvailable(): array
+    {
+        return [TextElement::class, CanvasTemplateNotice::class];
+    }
+}
+
 class CanvasTemplateResource extends Resource
 {
     protected static ?string $model = CanvasTemplateDocument::class;
@@ -194,8 +355,8 @@ class CanvasTemplateNotice extends TextElement
     {
         return 'notice';
     }
-    public function properties(SchemasSchema $schema): SchemasSchema
+    public function form(SchemasSchema $schema): SchemasSchema
     {
-        return parent::properties($schema)->components([...parent::properties(SchemasSchema::make())->getComponents(), TextInput::make('badge')->required()->maxLength(8)->default('AK')]);
+        return parent::form($schema)->components([...parent::form(SchemasSchema::make())->getComponents(), TextInput::make('badge')->required()->maxLength(8)->default('AK')]);
     }
 }

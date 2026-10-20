@@ -2,23 +2,25 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Rendering;
 
-use EduardoRibeiroDev\FilamentCanvas\Contracts\AssetLibrary;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasRenderData;
+use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\DocumentStore;
-use EduardoRibeiroDev\FilamentCanvas\Contracts\HasElementMedia;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\PreviewRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
+use EduardoRibeiroDev\FilamentCanvas\Data\DocumentReference;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\EloquentDocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
-use EduardoRibeiroDev\FilamentCanvas\Support\EmptyAssetLibrary;
+use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Gate;
 
 class CanvasRenderer implements PreviewRenderer
 {
     public function __construct(
         private ElementRegistry $elements,
-        private AssetLibrary $assets = new EmptyAssetLibrary,
         private string $template = 'filament-canvas::templates.blank',
         private string|DocumentStore|null $store = null,
     ) {}
@@ -28,17 +30,43 @@ class CanvasRenderer implements PreviewRenderer
         return $this->renderDocument($document, $context, true);
     }
 
+    public function renderOwner(
+        Model&CanvasOwner $owner,
+        CanvasDocument $document,
+        ?Authenticatable $user = null,
+        ?string $panelId = null,
+        bool $preview = false,
+    ): string {
+        Gate::forUser($user)->authorize('update', $owner);
+
+        $context = new EditorContext(
+            new DocumentReference($owner::class, $owner->getKey()),
+            $user,
+            $panelId,
+            $owner,
+        );
+
+        return ElementRegistry::using(
+            $owner::class,
+            $this->elements,
+            fn () => $this->renderDocument($document, $context, $preview),
+        );
+    }
+
     public function renderDocument(CanvasDocument $document, EditorContext $context, bool $preview = false): string
     {
         $store = is_string($this->store) ? app($this->store) : $this->store;
         $operation = function () use ($document, $context, $store, $preview): string {
             $data = [];
+            $owner = $context->document;
             if ($store instanceof EloquentDocumentStore) {
                 $store->authorize($context, 'preview');
                 $owner = $store->owner($context);
-                if ($owner instanceof CanvasRenderData) {
-                    $data = $owner->canvasRenderData($document, $context);
-                }
+                $context = $context->forDocument($owner);
+            }
+            if ($owner instanceof CanvasRenderData) {
+                (new MediaLibrary($context))->validateReferences($document->blocks, $this->elements);
+                $data = $owner->canvasRenderData($document, $context);
             }
 
             return self::renderTemplate($this->template, $data, $preview, [
@@ -66,59 +94,30 @@ class CanvasRenderer implements PreviewRenderer
 
     private function renderBlocks(CanvasDocument $document, EditorContext $context): string
     {
-        // This lazy snapshot belongs to one render/context, never a shared user cache.
-        $assets = new class($this->assets) implements AssetLibrary
-        {
-            private ?array $snapshot = null;
-
-            public function __construct(private AssetLibrary $library) {}
-
-            public function assets(EditorContext $context): array
-            {
-                return $this->snapshot ??= $this->library->assets($context);
-            }
-        };
         $blocks = '';
+        $templates = $this->elements->templates();
         foreach ($document->blocks as $index => $block) {
             $data = $block['data'];
-            if (($data['visivel'] ?? true) === false) {
+            if (($data['visible'] ?? true) === false) {
                 continue;
             }
             $element = $this->elements->get($block['type']);
-            $data['dados'] = $element->normalize(ElementData::from($data));
+            $data['properties'] = ElementData::normalize($element, ElementData::from($data));
             $block['data'] = $data;
-            $config = $data['dados'];
+            $config = $data['properties'];
             $style = $config;
             $align = in_array($style['align'] ?? '', ['left', 'center', 'right', 'justify'], true) ? $style['align'] : 'left';
             $color = Html::color($style['color'] ?? '');
             $font = max(1, min(100, (float) ($style['font_size'] ?? 12)));
-            $rotation = -(float) ($data['rotacao_graus'] ?? 0);
+            $rotation = -(float) ($data['rotation_deg'] ?? 0);
             $opacity = max(0, min(1, (float) ($config['opacity'] ?? 1)));
             $blend = in_array($config['blend_mode'] ?? '', ['normal', 'multiply', 'screen'], true) ? $config['blend_mode'] : 'normal';
             $geometry = '';
-            foreach (['left' => 'x_pt', 'top' => 'y_pt', 'width' => 'largura_pt', 'height' => 'altura_pt'] as $property => $key) {
+            foreach (['left' => 'x_pt', 'top' => 'y_pt', 'width' => 'width_pt', 'height' => 'height_pt'] as $property => $key) {
                 $geometry .= $property.':'.(float) ($data[$key] ?? 0).'pt;';
             }
-            if ($element instanceof HasElementMedia) {
-                $element = $element->withAssetLibrary($assets);
-            }
-            $content = $element->render($block, $context);
-            if ($element->capabilities()['image'] ?? false) {
-                $transform = $config['image_transform'] ?? null;
-                $flipX = ($config['flip_x'] ?? false) ? -1 : 1;
-                $flipY = ($config['flip_y'] ?? false) ? -1 : 1;
-                if (is_array($transform)) {
-                    $imageStyle = 'position:absolute;left:'.(float) ($transform['x'] ?? 0).'pt;top:'.(float) ($transform['y'] ?? 0).'pt;width:'.(float) ($transform['width'] ?? 1).'pt;height:'.(float) ($transform['height'] ?? 1).'pt;max-width:none;object-fit:fill;transform:rotate('.(-(float) ($transform['rotation'] ?? 0)).'deg) scale('.$flipX.','.$flipY.')';
-                } else {
-                    $fit = ($config['fit'] ?? '') === 'cover' ? 'cover' : 'contain';
-                    $imageStyle = 'object-fit:'.$fit.';object-position:'.((float) ($config['crop_x'] ?? .5) * 100).'% '.((float) ($config['crop_y'] ?? .5) * 100).'%;transform:scale('.$flipX.','.$flipY.')';
-                }
-                $content = preg_replace('/class="image"(?!\s+style=)/', 'class="image" style="'.Html::escape($imageStyle).'"', $content);
-            }
-            $link = Html::linkUrl($config['link_url'] ?? null);
-            if ($link !== '') {
-                $content .= '<a class="block-link" href="'.$link.'" aria-label="Abrir link"></a>';
-            }
+            $viewData = app(ElementViewData::class)->prepare($element, $block, $context);
+            $content = ElementMarkup::wrap($templates[$block['type']], $viewData);
             $blocks .= '<div class="block" data-kind="'.Html::escape($block['type']).'" data-editor-index="'.(int) $index.'" style="'.$geometry.'transform:rotate('.$rotation.'deg);font-size:'.$font.'pt;color:'.$color.';text-align:'.$align.';opacity:'.$opacity.';mix-blend-mode:'.$blend.'">'.$content.'</div>';
         }
 

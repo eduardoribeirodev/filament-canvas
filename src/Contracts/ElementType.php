@@ -2,30 +2,16 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Contracts;
 
-use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use Filament\Schemas\Schema;
+use Filament\Support\Contracts\HasIcon;
+use Filament\Support\Contracts\HasLabel;
 
-interface ElementType
+interface ElementType extends HasIcon, HasLabel
 {
     public function type(): string;
 
-    public function label(): string;
-
-    public function icon(): string;
-
-    /** Fields bind directly to the element's flat dados. Field defaults seed creation. */
-    public function properties(Schema $schema): Schema;
+    /** Fields bind directly to the element's flat properties. Field defaults seed creation. */
+    public function form(Schema $schema): Schema;
 
     public function view(): string;
-
-    /** Supplemental rules for internal/legacy data; native input rules come from properties(). */
-    public function validationRules(string $prefix = ''): array;
-
-    public function normalize(array $dados): array;
-
-    /** Local editing capabilities, independent of inheritance or type names. */
-    public function capabilities(): array;
-
-    /** Escaped/sanitized inner HTML; the canvas wraps geometry. */
-    public function render(array $block, EditorContext $context): string;
 }

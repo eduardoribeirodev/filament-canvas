@@ -1,4 +1,4 @@
-<label class="canvas-alignment-control" x-tooltip="{content:'Encaixar nas bordas e centros. Ctrl/⌘ ignora as guias durante o arraste.',theme:$store.theme}">
+<label class="canvas-alignment-control" x-tooltip="{content:@js(__('filament-canvas::canvas.guides_hint')),theme:$store.theme}">
     <x-filament::input.checkbox x-model="alignmentSnap" @change="snapGuides=[]" />
-    <span>Guias</span>
+    <span>{{ __('filament-canvas::canvas.guides') }}</span>
 </label>

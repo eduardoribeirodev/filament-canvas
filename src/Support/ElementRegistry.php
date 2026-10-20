@@ -5,7 +5,7 @@ namespace EduardoRibeiroDev\FilamentCanvas\Support;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\ElementType;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\HasElementMedia;
-use EduardoRibeiroDev\FilamentCanvas\Elements\CanvasElement;
+use EduardoRibeiroDev\FilamentCanvas\Rendering\ElementMarkup;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DataTableElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DrawingElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\ImageElement;
@@ -13,7 +13,6 @@ use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TitleElement;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
-use ReflectionMethod;
 
 final class ElementRegistry
 {
@@ -108,35 +107,48 @@ final class ElementRegistry
 
     public function labels(): array
     {
-        return array_map(fn (ElementType $element) => $element->label(), $this->elements);
+        return array_map(fn (ElementType $element) => (string) ($element->getLabel() ?? $element->type()), $this->elements);
     }
 
-    /** Metadata has no duplicated defaults; creation fills the element's native schema. */
+    public function icons(): array
+    {
+        return array_map(fn (ElementType $element) => $element->getIcon(), $this->elements);
+    }
+
+    public static function mediaCollectionMetadata(HasElementMedia $element): array
+    {
+        return array_map(fn (array $collection) => array_intersect_key($collection, array_flip([
+            'label', 'accepted_mime_types', 'max_files', 'max_size', 'reference_field',
+        ])), $element->mediaCollections());
+    }
+
+    public static function kind(ElementType $element): string
+    {
+        return match (true) {
+            $element instanceof TextElement => 'text',
+            $element instanceof ImageElement => 'image',
+            $element instanceof DrawingElement => 'drawing',
+            $element instanceof DataTableElement => 'table',
+            default => 'element',
+        };
+    }
+
+    /** Compile each registered type automatically, including custom views. */
+    public function templates(): array
+    {
+        return array_map(fn (ElementType $element) => ElementMarkup::template($element), $this->elements);
+    }
+
+    /** The editor derives behavior from class inheritance and media collection declarations. */
     public function metadataForEditor(): array
     {
-        return array_map(function (ElementType $element): array {
-            $capabilities = $element->capabilities();
-            $usesDefaultRendering = (new ReflectionMethod($element, 'render'))->getDeclaringClass()->getName() === CanvasElement::class;
-            $kind = null;
-            foreach (['image', 'text', 'drawing', 'table'] as $candidate) {
-                if ($capabilities[$candidate] ?? false) {
-                    $kind = $candidate;
-                    break;
-                }
-            }
-
-            return array_filter([
-                'label' => $element->label(), 'icon' => $element->icon(),
-                'capabilities' => $capabilities, 'kind' => $kind, 'toolbar' => $capabilities['toolbar'] ?? true,
-                'local_renderer' => array_key_exists('local_renderer', $capabilities) ? $capabilities['local_renderer'] : ($usesDefaultRendering ? match ($element->view()) {
-                    'filament-canvas::elements.text' => 'text',
-                    'filament-canvas::elements.image' => 'image',
-                    'filament-canvas::elements.drawing' => 'drawing',
-                    'filament-canvas::elements.data-table' => 'table',
-                    default => false,
-                } : false),
-                'media_collections' => $element instanceof HasElementMedia ? $element->mediaCollections() : null,
-            ], fn ($value) => $value !== null);
-        }, $this->elements);
+        return array_map(fn (ElementType $element): array => [
+            'label' => (string) ($element->getLabel() ?? $element->type()),
+            'class' => $element::class,
+            'icon' => ($element->getIcon() instanceof \BackedEnum ? $element->getIcon()->value : (string) $element->getIcon()),
+            'kind' => self::kind($element),
+            'toolbar' => method_exists($element, 'showInToolbar') ? $element->showInToolbar() : true,
+            'media_collections' => $element instanceof HasElementMedia ? self::mediaCollectionMetadata($element) : [],
+        ], $this->elements);
     }
 }
