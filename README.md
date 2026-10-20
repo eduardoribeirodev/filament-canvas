@@ -213,12 +213,25 @@ Use an existing, saved record. The canvas has its own **Save composition** actio
 | `TitleElement` | `title` | Rich text with heading defaults and inline editing. |
 | `TextElement` | `text` | Rich text, font size, colors, spacing, columns and links. |
 | `ImageElement` | `asset` | Media selection, cropping, image fit, opacity and flipping. |
-| `DrawingElement` | `drawing` | Drawing geometry, stroke and fill settings. |
+| `DrawingElement` | `drawing` | Click to place points, drag points, close paths, edit stroke and fill. |
+| `LineElement` | `line` | Start/end coordinates and solid, dashed or dotted strokes. |
+| `RectangleElement` | `rectangle` | Rectangle with stroke and optional fill. |
+| `EllipseElement` | `ellipse` | Ellipse with stroke and optional fill. |
+| `TriangleElement` | `triangle` | Triangle with stroke and optional fill. |
+| `ArrowElement` | `arrow` | Arrow with stroke and optional fill. |
 | `DataTableElement` | `data-table` | Editable column headings and rows through native repeaters. |
 
 These classes live in `EduardoRibeiroDev\FilamentCanvas\Elements` and are available by default.
 
 ![Table element and its Filament column and row controls](docs/images/data-table.png)
+
+### Drawing with Points
+
+Select **Drawing**, then click the canvas to add points. Click the first point to close the figure, or press **Enter** to finish an open path. **Esc** cancels. Double-click an existing drawing to edit its points; drag a point to move it, then press **Enter** to finish or **Esc** to discard the edits. The attributes panel also exposes the ordered points, closed/open state, stroke and fill.
+
+Points are saved as `drawing.points`, an array of `{x, y}` percentages relative to the element frame. The shared SVG view scales with the element and renders in standalone HTML/PDF. Line and shape styling remains under the same `drawing` property.
+
+The package migration `2026_10_20_000000_convert_canvas_drawings_to_lines` changes existing line-based `drawing` records to `line`, preserving their IDs, properties, position and rotation. Run `php artisan migrate` when updating the package. Its rollback restores only converted records; new lines are preserved.
 
 ### Creating Custom Elements
 
@@ -228,7 +241,7 @@ Generate an element in your application:
 php artisan make:canvas-element Notice
 ```
 
-The command asks **Which built-in element would you like to extend?** Choose **None (generic element)**, **Title**, **Text**, **Image**, **Drawing** or **Data table**.
+The command asks **Which built-in element would you like to extend?** Choose **None (generic element)**, **Title**, **Text**, **Image**, **Drawing**, **Line**, **Rectangle**, **Ellipse**, **Triangle**, **Arrow** or **Data table**.
 
 The command creates two files:
 
@@ -328,7 +341,7 @@ The inherited form and inline rich text editor work immediately. To choose the p
 php artisan make:canvas-element QuoteElement --extends=text
 ```
 
-`--extends` accepts `none`, `title`, `text`, `image`, `drawing` and `data-table`. With `--no-interaction` and no `--extends` option, the command generates a generic element.
+`--extends` accepts `none`, `title`, `text`, `image`, `drawing`, `line`, `rectangle`, `ellipse`, `triangle`, `arrow` and `data-table`. With `--no-interaction` and no `--extends` option, the command generates a generic element.
 
 **Nested elements:**
 
@@ -627,3 +640,17 @@ The MIT License (MIT). See [LICENSE](LICENSE) for details.
 ## Support
 
 For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/eduardoribeirodev/filament-canvas). Don't forget, Jesus loves you ❤️.
+
+### Toolbar groups
+
+Mix groups and standalone elements in `canvasElementsAvailable()` or the plugin element list. Groups only organize the toolbar; saved element types remain unchanged. Labels are optional, empty groups are omitted, and groups cannot be nested.
+
+```php
+use EduardoRibeiroDev\FilamentCanvas\Elements\ElementGroup;
+
+return [
+    ElementGroup::make([TextElement::class, ImageElement::class])->label('Content'),
+    ElementGroup::make([LineElement::class, RectangleElement::class])->label('Shapes'),
+    DataTableElement::class,
+];
+```

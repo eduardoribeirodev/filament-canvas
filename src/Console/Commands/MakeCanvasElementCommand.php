@@ -2,12 +2,17 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Console\Commands;
 
+use EduardoRibeiroDev\FilamentCanvas\Elements\ArrowElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\CanvasElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DataTableElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DrawingElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\EllipseElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\ImageElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\LineElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\RectangleElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TitleElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\TriangleElement;
 use Illuminate\Console\GeneratorCommand;
 use Illuminate\Support\Str;
 
@@ -17,7 +22,7 @@ class MakeCanvasElementCommand extends GeneratorCommand
 {
     protected $signature = 'make:canvas-element
         {name : The element class name, relative to App\\Canvas\\Elements}
-        {--extends= : Built-in element to inherit: none, title, text, image, drawing, data-table}
+        {--extends= : Built-in element to inherit: none, title, text, image, drawing, line, rectangle, ellipse, triangle, arrow, data-table}
         {--force : Overwrite the element class and view if they already exist}';
 
     protected $description = 'Create a Canvas element with a Filament form and an Alpine Blade view';
@@ -73,11 +78,17 @@ class MakeCanvasElementCommand extends GeneratorCommand
             'text' => TextElement::class,
             'image' => ImageElement::class,
             'drawing' => DrawingElement::class,
+            'line' => LineElement::class,
+            'rectangle' => RectangleElement::class,
+            'ellipse' => EllipseElement::class,
+            'triangle' => TriangleElement::class,
+            'arrow' => ArrowElement::class,
+
             'data-table' => DataTableElement::class,
         ];
         $base = $this->option('extends') ?? ($this->input->isInteractive() ? select(
             label: 'Which built-in element would you like to extend?',
-            options: ['none' => 'None (generic element)', 'title' => 'Title', 'text' => 'Text', 'image' => 'Image', 'drawing' => 'Drawing', 'data-table' => 'Data table'],
+            options: ['none' => 'None (generic element)', 'title' => 'Title', 'text' => 'Text', 'image' => 'Image', 'drawing' => 'Drawing', 'line' => 'Line', 'rectangle' => 'Rectangle', 'ellipse' => 'Ellipse', 'triangle' => 'Triangle', 'arrow' => 'Arrow', 'data-table' => 'Data table'],
             default: 'none',
             scroll: 6,
         ) : 'none');

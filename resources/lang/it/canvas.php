@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'line' => 'Linea',
+    'rectangle' => 'Rettangolo',
+    'ellipse' => 'Ellisse',
+    'triangle' => 'Triangolo',
+    'arrow' => 'Freccia',
+    'fill_color' => 'Colore di riempimento',
+    'closed_shape' => 'Forma chiusa',
+    'points' => 'Punti',
+    'drawing_help' => 'Fai clic per aggiungere punti. Il primo punto chiude la figura. Invio termina; Esc annulla.',
+    'finish_drawing' => 'Termina disegno',
+    'cancel_drawing' => 'Annulla disegno',
+    'drawing_min_points' => 'Usa almeno due punti, o tre per chiudere la figura.',
+
     'title' => 'Titolo',
     'text' => 'Testo',
     'image' => 'Immagine',

@@ -651,6 +651,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             'height' => $document->height,
             'previewHtml' => $plugin->resolvePreviewRenderer($this->documentType)->render($document, $context),
             'elementLabels' => $elements->labels(),
+            'elementGroups' => $elements->toolbarGroups(),
             'elementIcons' => $elements->icons(),
             'elementTemplates' => $elements->templates(),
             'elementTypes' => $elements->metadataForEditor(),

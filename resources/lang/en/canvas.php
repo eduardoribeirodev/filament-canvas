@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'line' => 'Line',
+    'rectangle' => 'Rectangle',
+    'ellipse' => 'Ellipse',
+    'triangle' => 'Triangle',
+    'arrow' => 'Arrow',
+    'fill_color' => 'Fill color',
+    'closed_shape' => 'Closed shape',
+    'points' => 'Points',
+    'drawing_help' => 'Click to add points. Click the first point to close. Enter finishes; Esc cancels.',
+    'finish_drawing' => 'Finish drawing',
+    'cancel_drawing' => 'Cancel drawing',
+    'drawing_min_points' => 'Use at least two points, or three for a closed drawing.',
+
     'title' => 'Title',
     'text' => 'Text',
     'image' => 'Image',

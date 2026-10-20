@@ -1,3 +1,156 @@
+//#region resources/js/drawing.js
+/** Interactive point editing; coordinates are percentages of the element's local frame. */
+var drawingTools = {
+	drawingSession: null,
+	drawingCursor: null,
+	isDrawing(block) {
+		return this.elementTypes[block?.type]?.kind === "drawing";
+	},
+	isDrawingEditing(block) {
+		return Boolean(block && this.drawingSession?.key === block._key);
+	},
+	beginDrawing(block, before) {
+		Object.assign(block.data, {
+			x_pt: 0,
+			y_pt: 0,
+			width_pt: this.pageWidth,
+			height_pt: this.pageHeight,
+			rotation_deg: 0
+		});
+		block.data.properties.drawing = {
+			...block.data.properties.drawing,
+			points: [],
+			closed: false
+		};
+		this.drawingSession = {
+			key: block._key,
+			creating: true,
+			...before
+		};
+		this.drawingCursor = null;
+		this.$nextTick?.(() => this.$refs.stage?.focus({ preventScroll: true }));
+	},
+	editDrawing(event, index) {
+		event?.preventDefault?.();
+		event?.stopPropagation?.();
+		if (this.saving || !this.isDrawing(this.blocks[index])) return;
+		if (this.drawingSession) this.finishDrawing();
+		this.selected = index;
+		this.cropIndex = null;
+		this.endGesture();
+		this.drawingSession = {
+			key: this.current._key,
+			creating: false,
+			snapshot: this.snapshot(),
+			undoDepth: this.undoStack.length,
+			dirty: this.dirty,
+			redo: [...this.redoStack]
+		};
+		this.$refs.stage?.focus({ preventScroll: true });
+	},
+	drawingLocalPoint(event, block) {
+		const paper = this.$refs.paper.getBoundingClientRect(), d = block.data;
+		const x = (event.clientX - paper.left) / this.zoom - Number(d.x_pt) - Number(d.width_pt) / 2;
+		const y = (event.clientY - paper.top) / this.zoom - Number(d.y_pt) - Number(d.height_pt) / 2;
+		const angle = -Number(d.rotation_deg || 0) * Math.PI / 180;
+		return {
+			x: Math.max(0, Math.min(100, ((x * Math.cos(angle) + y * Math.sin(angle)) / Number(d.width_pt) + .5) * 100)),
+			y: Math.max(0, Math.min(100, ((-x * Math.sin(angle) + y * Math.cos(angle)) / Number(d.height_pt) + .5) * 100))
+		};
+	},
+	drawingPointerDown(event) {
+		if (!this.drawingSession?.creating || event.button !== 0 || event.target?.closest?.("[data-canvas-point],[data-canvas-drawing-controls]")) return;
+		event.preventDefault();
+		event.stopImmediatePropagation?.();
+		event.stopPropagation();
+		const points = this.current?.data.properties.drawing.points;
+		if (!points || points.length >= 300) return;
+		points.push(this.drawingLocalPoint(event, this.current));
+		this.drawingCursor = null;
+		this.schedulePreview();
+		this.$refs.stage?.focus({ preventScroll: true });
+	},
+	drawingPointerMove(event) {
+		if (this.drawingSession?.creating && this.current) this.drawingCursor = this.drawingLocalPoint(event, this.current);
+	},
+	drawingPointStart(event, index) {
+		event.preventDefault();
+		event.stopPropagation();
+		if (this.saving || !this.current || !this.isDrawingEditing(this.current)) return;
+		if (this.drawingSession.creating) {
+			if (index === 0) this.finishDrawing(true);
+			return;
+		}
+		this.gesture = {
+			mode: "drawing-point",
+			point: index,
+			snapshot: this.snapshot(),
+			changed: false,
+			x: event.clientX,
+			y: event.clientY,
+			d: JSON.parse(JSON.stringify(this.current.data))
+		};
+		event.currentTarget.setPointerCapture(event.pointerId);
+	},
+	finishDrawing(closed = null) {
+		const session = this.drawingSession;
+		if (!session) return true;
+		const block = this.blocks.find((block) => block._key === session.key);
+		if (!block) {
+			this.drawingSession = null;
+			return true;
+		}
+		const drawing = block.data.properties.drawing, shouldClose = closed ?? drawing.closed ?? false;
+		if (drawing.points.length < (shouldClose ? 3 : 2)) {
+			this.error = this.messages.drawing_min_points;
+			return false;
+		}
+		if (session.creating) {
+			const points = drawing.points.map((p) => ({
+				x: p.x * this.pageWidth / 100,
+				y: p.y * this.pageHeight / 100
+			}));
+			const left = Math.max(0, Math.min(...points.map((p) => p.x)) - 4), top = Math.max(0, Math.min(...points.map((p) => p.y)) - 4);
+			const width = Math.max(1, Math.min(this.pageWidth, Math.max(...points.map((p) => p.x)) + 4) - left);
+			const height = Math.max(1, Math.min(this.pageHeight, Math.max(...points.map((p) => p.y)) + 4) - top);
+			Object.assign(block.data, {
+				x_pt: left,
+				y_pt: top,
+				width_pt: width,
+				height_pt: height
+			});
+			drawing.points = points.map((p) => ({
+				x: (p.x - left) / width * 100,
+				y: (p.y - top) / height * 100
+			}));
+		} else if (shouldClose !== drawing.closed) this.checkpoint();
+		drawing.closed = shouldClose;
+		this.drawingSession = null;
+		this.drawingCursor = null;
+		this.error = "";
+		this.endGesture();
+		this.schedulePreview();
+		this.syncInspector();
+		return true;
+	},
+	cancelDrawing() {
+		const session = this.drawingSession;
+		if (!session) return;
+		this.drawingSession = null;
+		this.drawingCursor = null;
+		this.endGesture();
+		this.blocks = JSON.parse(session.snapshot);
+		this.undoStack.length = session.undoDepth;
+		this.redoStack = session.redo;
+		this.dirty = session.dirty;
+		this.selected = null;
+		this.error = "";
+		this.prepare();
+		this.schedulePreview();
+		this.syncInspector();
+	}
+};
+//#endregion
 //#region resources/js/snapping.js
 /** Geometry in document units; tolerance is measured in screen pixels. */
 function elementBounds(data) {
@@ -324,6 +477,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 	const minZoom = Number(options.minZoom ?? .25), maxZoom = Number(options.maxZoom ?? 3);
 	if (!Number.isFinite(minZoom) || !Number.isFinite(maxZoom) || minZoom <= 0 || maxZoom <= minZoom) throw new RangeError("Canvas zoom limits must be positive numbers with maxZoom greater than minZoom.");
 	return {
+		...drawingTools,
 		blocks: JSON.parse(JSON.stringify(initial)),
 		documentData: options.data || {},
 		assets,
@@ -358,6 +512,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 		redoStack: [],
 		gesture: null,
 		messages: {
+			drawing_min_points: "Use at least two points, or three for a closed drawing.",
 			load_properties_error: "Unable to load element properties.",
 			validation_error: "Check property values and validation messages.",
 			upload_error: "Unable to upload media. Check its format, size and validation messages.",
@@ -373,6 +528,11 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			image: "Image",
 			photo: "Photo",
 			drawing: "Drawing",
+			line: "Line",
+			rectangle: "Rectangle",
+			ellipse: "Ellipse",
+			triangle: "Triangle",
+			arrow: "Arrow",
 			table: "Table",
 			"data-table": "Table",
 			...options.labels || {}
@@ -402,6 +562,11 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				} }
 			},
 			drawing: { kind: "drawing" },
+			line: { kind: "line" },
+			rectangle: { kind: "shape" },
+			ellipse: { kind: "shape" },
+			triangle: { kind: "shape" },
+			arrow: { kind: "shape" },
 			"data-table": { kind: "table" },
 			table: { kind: "table" },
 			...options.elementTypes || {}
@@ -563,7 +728,8 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				top: this.viewport.y + "px",
 				width: this.pageWidth + "px",
 				height: this.pageHeight + "px",
-				transform: `scale(${this.zoom})`
+				transform: `scale(${this.zoom})`,
+				cursor: this.drawingSession?.creating ? "crosshair" : "default"
 			};
 		},
 		placeViewport(zoom, left, top) {
@@ -596,6 +762,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.snapGuides = [];
 		},
 		selectBlock(index) {
+			if (this.drawingSession && !this.finishDrawing()) this.cancelDrawing();
 			if (this.textEditing) this.commitTextEditing();
 			this.selected = index;
 			this.syncInspector();
@@ -607,6 +774,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			return this.elementTypes[block?.type]?.kind === "text";
 		},
 		syncInspector() {
+			if (this.drawingSession?.creating) return;
 			if (this.destroyed) return;
 			this.syncRichEditor();
 			const reference = this.$el?.querySelector?.("[data-canvas-reference-select]");
@@ -1229,6 +1397,12 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			};
 		},
 		key(e) {
+			if (this.drawingSession && ["Enter", "Escape"].includes(e.key)) {
+				e.preventDefault();
+				e.stopPropagation();
+				e.key === "Escape" ? this.cancelDrawing() : this.finishDrawing();
+				return;
+			}
 			if (this.textEditing) {
 				if (e.key === "Escape") {
 					e.preventDefault?.();
@@ -1353,7 +1527,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 					y2: 0
 				}
 			}[value];
-			if (this.current?.type !== "drawing" || !points) return;
+			if (this.current?.type !== "line" || !points) return;
 			this.checkpoint();
 			Object.assign(this.current.data.properties.drawing, points);
 		},
@@ -1370,6 +1544,10 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.dirty = true;
 		},
 		undo() {
+			if (this.drawingSession) {
+				this.cancelDrawing();
+				return;
+			}
 			this.endGesture();
 			if (this.textEditing) this.commitTextEditing();
 			if (!this.undoStack.length) return;
@@ -1406,6 +1584,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			d.rotation_deg = Math.max(-360, Math.min(360, Number(d.rotation_deg) || 0));
 		},
 		duplicate() {
+			if (this.drawingSession && !this.finishDrawing()) return;
 			if (this.textEditing) this.commitTextEditing();
 			if (!this.current) return;
 			this.checkpoint();
@@ -1420,6 +1599,11 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.selected = this.blocks.length - 1;
 		},
 		remove() {
+			if (this.drawingSession?.creating) {
+				this.cancelDrawing();
+				return;
+			}
+			if (this.drawingSession) this.finishDrawing();
 			if (this.textEditing) this.commitTextEditing();
 			if (!this.current) return;
 			this.checkpoint();
@@ -1428,6 +1612,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.cropIndex = null;
 		},
 		layer(delta) {
+			if (this.drawingSession && !this.finishDrawing()) return;
 			const i = this.selected, j = i + delta;
 			if (i === null || j < 0 || j >= this.blocks.length) return;
 			this.checkpoint();
@@ -1436,8 +1621,9 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.cropIndex = null;
 		},
 		start(e, i, mode, corner = "se") {
-			if (e.button !== 0 || this.nativePinch || this.saving || this.isTextEditing(this.blocks[i]) || e.target?.closest?.("[data-canvas-text-editor]")) return;
+			if (e.button !== 0 || this.nativePinch || this.saving || this.isDrawingEditing(this.blocks[i]) || this.isTextEditing(this.blocks[i]) || e.target?.closest?.("[data-canvas-text-editor]")) return;
 			if (this.textEditing) this.commitTextEditing();
+			if (this.drawingSession && this.drawingSession.key !== this.blocks[i]._key) this.finishDrawing();
 			e.preventDefault();
 			this.snapGuides = [];
 			this.selected = i;
@@ -1480,6 +1666,15 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			const g = this.gesture, d = this.current.data, dx = (e.clientX - g.x) / this.zoom, dy = (e.clientY - g.y) / this.zoom;
 			const snap = (v) => this.snap(v);
 			this.snapGuides = [];
+			if (g.mode === "drawing-point") {
+				const angle = -Number(g.d.rotation_deg || 0) * Math.PI / 180, point = g.d.properties.drawing.points[g.point];
+				d.properties.drawing.points[g.point] = {
+					x: Math.max(0, Math.min(100, point.x + (dx * Math.cos(angle) + dy * Math.sin(angle)) / Number(d.width_pt) * 100)),
+					y: Math.max(0, Math.min(100, point.y + (-dx * Math.sin(angle) + dy * Math.cos(angle)) / Number(d.height_pt) * 100))
+				};
+				this.checkpointGesture();
+				return;
+			}
 			if (g.mode.startsWith("image-")) {
 				const old = g.d.properties.image_transform, t = d.properties.image_transform;
 				const a = -Number(g.d.rotation_deg) * Math.PI / 180, lx = dx * Math.cos(a) + dy * Math.sin(a), ly = -dx * Math.sin(a) + dy * Math.cos(a);
@@ -1554,6 +1749,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				zIndex: i + 1,
 				opacity: d.visible === false ? .25 : 1,
 				color: d.properties?.color || "#222",
+				cursor: this.drawingSession?.creating ? "crosshair" : "move",
 				fontSize: (d.properties?.font_size || (b.type === "table" ? 8 : 12)) + "px",
 				textAlign: d.properties?.align || "center"
 			};
@@ -1617,7 +1813,9 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 		},
 		syncPreview() {
 			if (this.destroyed || !this.previewReady || !this.previewAnchor?.isConnected) return;
-			const doc = this.$refs.preview.contentDocument, visible = [], active = /* @__PURE__ */ new Set();
+			const doc = this.$refs?.preview?.contentDocument;
+			if (!doc || doc !== this.previewAnchor.ownerDocument) return;
+			const visible = [], active = /* @__PURE__ */ new Set();
 			this.blocks.forEach((b, index) => {
 				const key = b._key;
 				active.add(key);
@@ -1685,6 +1883,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 		},
 		async save(wire) {
 			if (this.saving || this.imageUploading) return;
+			if (this.drawingSession && !this.finishDrawing()) return;
 			if (this.textEditing) this.commitTextEditing();
 			await this.flushInspector();
 			if (this.inspectorInvalid) return;
@@ -1719,23 +1918,30 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				b._key ??= this.nextKey++;
 				this.nextKey = Math.max(this.nextKey, Number(b._key) + 1);
 				b.data.properties ??= {};
-				if (b.type === "drawing") b.data.properties.drawing = {
+				if (b.type === "line") b.data.properties.drawing = {
 					...this.drawingDefaults(),
 					...b.data.properties.drawing || {}
 				};
 			}
 		},
 		add(type) {
+			if (this.drawingSession && !this.finishDrawing()) this.cancelDrawing();
 			if (this.saving || this.adding || !Object.hasOwn(this.labels, type)) return null;
 			const insert = (initialized) => {
 				if (this.destroyed) return null;
+				const before = {
+					snapshot: this.snapshot(),
+					undoDepth: this.undoStack.length,
+					dirty: this.dirty,
+					redo: [...this.redoStack]
+				};
 				this.checkpoint();
 				const data = {
 					name: this.labels[type],
 					x_pt: Math.min(40, this.pageWidth / 10),
 					y_pt: Math.min(40, this.pageHeight / 10),
 					width_pt: Math.min(200, this.pageWidth),
-					height_pt: Math.min(this.elementTypes[type]?.kind === "drawing" || type === "drawing" ? 12 : 100, this.pageHeight),
+					height_pt: Math.min(this.elementTypes[type]?.kind === "line" || type === "line" ? 12 : 100, this.pageHeight),
 					rotation_deg: 0,
 					visible: true,
 					image_id: null,
@@ -1752,7 +1958,8 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				this.selected = this.blocks.length - 1;
 				this.normalize(block);
 				this.prepare();
-				this.syncInspector();
+				if (this.isDrawing(block)) this.beginDrawing(block, before);
+				else this.syncInspector();
 				this.schedulePreview();
 				return block;
 			};

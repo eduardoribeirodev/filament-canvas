@@ -47,6 +47,8 @@ final class ElementValidation
         if ($element instanceof TextElement) {
             // Generated caches are part of the text format, not configurable fields.
             $rules = ['html' => ['nullable', 'string', 'max:200000'], 'text' => ['nullable', 'string', 'max:20000']];
+            // Saved base colors still participate in rendering; new colors are rich text marks.
+            $rules['color'] = ['nullable', 'regex:/^#(?:[a-f0-9]{3}|[a-f0-9]{6}|[a-f0-9]{8})$/iD'];
         }
         if ($element instanceof ImageElement) {
             $rules = [

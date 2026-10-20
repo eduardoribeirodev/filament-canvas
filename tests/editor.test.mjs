@@ -249,7 +249,7 @@ import { default as createCanvas, renderRichDocument, plainRichDocument } from '
     });
 
     test('dragged layers preserve selected identity, saved IDs and undo while rejecting duplicate sort keys',()=>{
-        const state=editor();state.current.data.id=10;state.add('image');state.current.data.id=20;state.add('drawing');state.current.data.id=30;
+        const state=editor();state.current.data.id=10;state.add('image');state.current.data.id=20;state.add('line');state.current.data.id=30;
         const keys=state.blocks.map(block=>block._key);state.selected=1;
         state.reorderLayers([keys[1],keys[2],keys[0]]);
         assert.deepEqual(state.blocks.map(block=>block.data.id),[10,30,20]);

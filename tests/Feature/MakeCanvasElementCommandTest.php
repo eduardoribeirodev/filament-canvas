@@ -203,7 +203,7 @@ class MakeCanvasElementCommandTest extends TestCase
     public function test_an_unknown_parent_does_not_write_files(): void
     {
         $this->artisan('make:canvas-element', ['name' => 'InvalidParentElement', '--extends' => 'unknown'])
-            ->expectsOutputToContain('Choose one of: none, title, text, image, drawing, data-table.')
+            ->expectsOutputToContain('Choose one of: none, title, text, image, drawing, line, rectangle, ellipse, triangle, arrow, data-table.')
             ->assertFailed();
 
         $this->assertDirectoryDoesNotExist($this->directory);

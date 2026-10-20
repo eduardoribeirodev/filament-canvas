@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'line' => 'Línea',
+    'rectangle' => 'Rectángulo',
+    'ellipse' => 'Elipse',
+    'triangle' => 'Triángulo',
+    'arrow' => 'Flecha',
+    'fill_color' => 'Color de relleno',
+    'closed_shape' => 'Forma cerrada',
+    'points' => 'Puntos',
+    'drawing_help' => 'Haz clic para añadir puntos. Pulsa el primero para cerrar. Enter termina; Esc cancela.',
+    'finish_drawing' => 'Terminar dibujo',
+    'cancel_drawing' => 'Cancelar dibujo',
+    'drawing_min_points' => 'Usa al menos dos puntos, o tres para cerrar la figura.',
+
     'title' => 'Título',
     'text' => 'Texto',
     'image' => 'Imagen',

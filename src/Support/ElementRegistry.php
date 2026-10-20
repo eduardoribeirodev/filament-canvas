@@ -5,12 +5,19 @@ namespace EduardoRibeiroDev\FilamentCanvas\Support;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\ElementType;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\HasElementMedia;
-use EduardoRibeiroDev\FilamentCanvas\Rendering\ElementMarkup;
+use EduardoRibeiroDev\FilamentCanvas\Elements\ArrowElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DataTableElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DrawingElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\ElementGroup;
+use EduardoRibeiroDev\FilamentCanvas\Elements\EllipseElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\ImageElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\LineElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\RectangleElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\ShapeElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TitleElement;
+use EduardoRibeiroDev\FilamentCanvas\Elements\TriangleElement;
+use EduardoRibeiroDev\FilamentCanvas\Rendering\ElementMarkup;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
@@ -41,7 +48,9 @@ final class ElementRegistry
     /** @var array<string, ElementType> */
     private array $elements = [];
 
-    /** @param array<ElementType|class-string<ElementType>> $elements */
+    private array $toolbar = [];
+
+    /** @param array<ElementGroup|ElementType|class-string<ElementType>> $elements */
     public static function from(array $elements): self
     {
         $registry = new self;
@@ -55,7 +64,7 @@ final class ElementRegistry
     public static function defaults(): self
     {
         $registry = new self;
-        foreach ([new TitleElement, new TextElement, new ImageElement, new ImageElement('image'), new ImageElement('photo'), new DrawingElement, new DataTableElement, new DataTableElement('table')] as $element) {
+        foreach ([new TitleElement, new TextElement, new ImageElement, new ImageElement('image'), new ImageElement('photo'), new DrawingElement, new LineElement, new RectangleElement, new EllipseElement, new TriangleElement, new ArrowElement, new DataTableElement, new DataTableElement('table')] as $element) {
             $registry->register($element);
         }
 
@@ -74,13 +83,32 @@ final class ElementRegistry
     }
 
     /** @param ElementType|class-string<ElementType> $element */
-    public function register(string|ElementType $element): self
+    public function register(string|ElementType|ElementGroup $element): self
     {
+        if ($element instanceof ElementGroup) {
+            $types = [];
+            foreach ($element->getElements() as $member) {
+                if ($member instanceof ElementGroup) {
+                    throw new InvalidArgumentException('Canvas toolbar groups cannot be nested.');
+                }
+                $member = is_string($member) ? app($member) : $member;
+                if (! $member instanceof ElementType) {
+                    throw new InvalidArgumentException('Canvas elements must implement ElementType.');
+                }
+                $this->elements[$member->type()] = $member;
+                $types[] = $member->type();
+            }
+            $this->toolbar[] = ['label' => $element->getLabel(), 'types' => $types, 'grouped' => true];
+
+            return $this;
+        }
+
         $element = is_string($element) ? app($element) : $element;
         if (! $element instanceof ElementType) {
             throw new InvalidArgumentException('Canvas elements must implement ElementType.');
         }
         $this->elements[$element->type()] = $element;
+        $this->toolbar[] = ['label' => null, 'types' => [$element->type()], 'grouped' => false];
 
         return $this;
     }
@@ -91,8 +119,32 @@ final class ElementRegistry
         foreach ($types as $type) {
             $registry->register($this->get($type));
         }
+        $registry->toolbar = array_map(fn ($group) => [...$group, 'types' => array_values(array_intersect($group['types'], $types))], $this->toolbar);
 
         return $registry;
+    }
+
+    /** Ordered, nonempty toolbar sections; element definitions remain flat. */
+    public function toolbarGroups(): array
+    {
+        $seen = [];
+        $groups = [];
+        $metadata = $this->metadataForEditor();
+        foreach ($this->toolbar as $group) {
+            $group['types'] = array_values(array_filter($group['types'], function ($type) use (&$seen, $metadata) {
+                if (isset($seen[$type]) || ! ($metadata[$type]['toolbar'] ?? true)) {
+                    return false;
+                }
+                $seen[$type] = true;
+
+                return true;
+            }));
+            if ($group['types'] !== []) {
+                $groups[] = $group;
+            }
+        }
+
+        return $groups;
     }
 
     public function get(string $type): ElementType
@@ -128,6 +180,8 @@ final class ElementRegistry
             $element instanceof TextElement => 'text',
             $element instanceof ImageElement => 'image',
             $element instanceof DrawingElement => 'drawing',
+            $element instanceof ShapeElement => 'shape',
+            $element instanceof LineElement => 'line',
             $element instanceof DataTableElement => 'table',
             default => 'element',
         };

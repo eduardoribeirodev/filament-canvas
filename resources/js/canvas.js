@@ -1,3 +1,4 @@
+import {drawingTools} from './drawing.js';
 import {alignMove, alignResize, elementBounds} from './snapping.js';
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
@@ -107,9 +108,11 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         throw new RangeError('Canvas zoom limits must be positive numbers with maxZoom greater than minZoom.');
     }
     const state = {
+        ...drawingTools,
         blocks: JSON.parse(JSON.stringify(initial)), documentData: options.data || {}, assets, pageWidth: Number(pageWidth), pageHeight: Number(pageHeight), previewHtml, selected: null,
         cropIndex: null, panel: 'properties', minZoom, maxZoom, zoom: Math.max(minZoom,Math.min(maxZoom,1)), grid: true, snapPixels: 5, alignmentSnap: true, snapGuides: [], viewport: {x:32,y:32,width:0,height:0}, editorFitZoom: null, editorViewportSize: null, disposeEditorViewport: null, disposeZoomSlider: null, dirty: false, saving: false, imageUploading: false, error: '', undoStack: [], redoStack: [], gesture: null,
         messages: {
+            drawing_min_points:'Use at least two points, or three for a closed drawing.',
             load_properties_error: 'Unable to load element properties.',
             validation_error: 'Check property values and validation messages.',
             upload_error: 'Unable to upload media. Check its format, size and validation messages.',
@@ -118,8 +121,8 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             missing_template: 'Missing view template for :type.',
             ...(options.messages || {}),
         },
-        labels: {title: 'Title', text: 'Text', asset: 'Image', image: 'Image', photo: 'Photo', drawing: 'Drawing', table: 'Table', 'data-table': 'Table', ...(options.labels || {})},
-        elementTypes: {title:{kind:'text'},text:{kind:'text'},asset:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},image:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},photo:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},drawing:{kind:'drawing'},'data-table':{kind:'table'},table:{kind:'table'},...(options.elementTypes || {})}, templates: options.templates || {},
+        labels: {title: 'Title', text: 'Text', asset: 'Image', image: 'Image', photo: 'Photo', drawing: 'Drawing', line: 'Line', rectangle:'Rectangle', ellipse:'Ellipse', triangle:'Triangle', arrow:'Arrow', table: 'Table', 'data-table': 'Table', ...(options.labels || {})},
+        elementTypes: {title:{kind:'text'},text:{kind:'text'},asset:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},image:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},photo:{kind:'image',media_collections:{image:{reference_field:'image_id',max_files:1}}},drawing:{kind:'drawing'},line:{kind:'line'},rectangle:{kind:'shape'},ellipse:{kind:'shape'},triangle:{kind:'shape'},arrow:{kind:'shape'},'data-table':{kind:'table'},table:{kind:'table'},...(options.elementTypes || {})}, templates: options.templates || {},
         previewReady: false, previewLoaded: false, previewNodes: new Map(), previewSignatures: new Map(), previewFrame: null, nextKey: 1, nativePinch: null, destroyed: false, disposeWatch: null, disposeSelectionWatch: null, textEditing: null, inlineMountTimer: null, inlineFocusTimer: null, richEditorSignature: null,richTextColors:options.richTextColors || {},previewFontStyle:null, inspectorGeneration:0, inspectorSelection:null, inspectorSignature:null, inspectorValueSignature:null, inspectorRequestRevision:0, inspectorHydrating:false, inspectorInvalid:false, inspectorApplying:false, inspectorPending:null, inspectorPromise:null, inspectorFields:[], inspectorEditRevisions:new Map(), disposeInspectorWatch:null, adding:false,
         init() {
         this.prepare();
@@ -209,7 +212,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             return {position:'relative',overflow:'clip',width:Math.max(this.viewport.width,this.viewport.x+this.pageWidth*this.zoom+32)+'px',height:Math.max(this.viewport.height,this.viewport.y+this.pageHeight*this.zoom+32)+'px'};
         },
         paperStyle() {
-            return {position:'absolute',left:this.viewport.x+'px',top:this.viewport.y+'px',width:this.pageWidth+'px',height:this.pageHeight+'px',transform:`scale(${this.zoom})`};
+            return {position:'absolute',left:this.viewport.x+'px',top:this.viewport.y+'px',width:this.pageWidth+'px',height:this.pageHeight+'px',transform:`scale(${this.zoom})`,cursor:this.drawingSession?.creating?'crosshair':'default'};
         },
         placeViewport(zoom,left,top) {
             const stage=this.$refs.stage;
@@ -236,10 +239,11 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             return this.grid && Number.isFinite(step) && step>0 ? Math.round(value/step)*step : value;
         },
         endGesture() { this.gesture=null;this.snapGuides=[]; },
-        selectBlock(index) { if(this.textEditing)this.commitTextEditing();this.selected=index;this.syncInspector(); },
+        selectBlock(index) { if(this.drawingSession && !this.finishDrawing())this.cancelDrawing();if(this.textEditing)this.commitTextEditing();this.selected=index;this.syncInspector(); },
         get imageTypes() { return Object.keys(this.elementTypes).filter(type=>this.elementTypes[type].kind==='image'); },
         isText(block) { return this.elementTypes[block?.type]?.kind==='text'; },
         syncInspector() {
+            if(this.drawingSession?.creating)return;
             if(this.destroyed)return;
             this.syncRichEditor();
             const reference=this.$el?.querySelector?.('[data-canvas-reference-select]');
@@ -619,6 +623,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         return {x_pt:Number(d.x_pt)+(sx*dw*Math.cos(a)-sy*dh*Math.sin(a)-dw)/2,y_pt:Number(d.y_pt)+(sx*dw*Math.sin(a)+sy*dh*Math.cos(a)-dh)/2,width_pt:w,height_pt:h};
     },
         key(e) {
+        if(this.drawingSession && ['Enter','Escape'].includes(e.key)){e.preventDefault();e.stopPropagation();e.key==='Escape'?this.cancelDrawing():this.finishDrawing();return;}
         if(this.textEditing){if(e.key==='Escape'){e.preventDefault?.();e.stopPropagation?.();this.cancelTextEditing();}return;}
         if(e.target?.closest?.('input,textarea,select,button,[role="slider"],[contenteditable="true"]')||this.saving)return;
         if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?this.redo():this.undo();return;}
@@ -677,19 +682,19 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
     },
         setDrawingOrientation(value) {
         const points={horizontal:{x1:0,y1:50,x2:100,y2:50},vertical:{x1:50,y1:0,x2:50,y2:100},descending:{x1:0,y1:0,x2:100,y2:100},ascending:{x1:0,y1:100,x2:100,y2:0}}[value];
-        if(this.current?.type!=='drawing'||!points)return;
+        if(this.current?.type!=='line'||!points)return;
         this.checkpoint();Object.assign(this.current.data.properties.drawing,points);
     },
         get current() { return this.selected === null ? null : this.blocks[this.selected]; },
         snapshot() { return JSON.stringify(this.blocks); },
         checkpoint(snapshot=this.snapshot()) { this.undoStack.push(snapshot); if (this.undoStack.length > 60) this.undoStack.shift(); this.redoStack = []; this.dirty = true; },
-        undo() { this.endGesture();if(this.textEditing)this.commitTextEditing();if (!this.undoStack.length) return; this.redoStack.push(this.snapshot()); this.blocks = JSON.parse(this.undoStack.pop()); this.prepare(); this.selected = null; this.cropIndex=null; this.inspectorInvalid=false; this.error=''; this.dirty = true; this.syncInspector(); },
+        undo() { if(this.drawingSession){this.cancelDrawing();return;}this.endGesture();if(this.textEditing)this.commitTextEditing();if (!this.undoStack.length) return; this.redoStack.push(this.snapshot()); this.blocks = JSON.parse(this.undoStack.pop()); this.prepare(); this.selected = null; this.cropIndex=null; this.inspectorInvalid=false; this.error=''; this.dirty = true; this.syncInspector(); },
         redo() { this.endGesture();if(this.textEditing)this.commitTextEditing();if (!this.redoStack.length) return; this.undoStack.push(this.snapshot()); this.blocks = JSON.parse(this.redoStack.pop()); this.prepare(); this.selected = null; this.cropIndex=null; this.inspectorInvalid=false; this.error=''; this.dirty = true; this.syncInspector(); },
         normalize(b) { const d = b.data; d.width_pt = Math.max(1, Math.min(this.pageWidth, Number(d.width_pt)||1)); d.height_pt = Math.max(1, Math.min(this.pageHeight, Number(d.height_pt)||1)); d.x_pt = Math.max(0, Math.min(this.pageWidth-d.width_pt, Number(d.x_pt)||0)); d.y_pt = Math.max(0, Math.min(this.pageHeight-d.height_pt, Number(d.y_pt)||0)); d.rotation_deg = Math.max(-360, Math.min(360, Number(d.rotation_deg)||0)); },
-        duplicate() { if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); const b=JSON.parse(JSON.stringify(this.current)); b._key=this.nextKey++; delete b.data.id; b.data.name+=' (copy)'; b.data.x_pt=Number(b.data.x_pt)+12; b.data.y_pt=Number(b.data.y_pt)+12; this.normalize(b); this.blocks.push(b); this.selected=this.blocks.length-1; },
-        remove() { if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); this.blocks.splice(this.selected,1); this.selected=null; this.cropIndex=null; },
-        layer(delta) { const i=this.selected, j=i+delta; if(i===null||j<0||j>=this.blocks.length)return; this.checkpoint(); [this.blocks[i],this.blocks[j]]=[this.blocks[j],this.blocks[i]]; this.selected=j; this.cropIndex=null; },
-        start(e,i,mode,corner='se') { if(e.button!==0||this.nativePinch||this.saving||this.isTextEditing(this.blocks[i])||e.target?.closest?.('[data-canvas-text-editor]'))return;if(this.textEditing)this.commitTextEditing(); e.preventDefault(); this.snapGuides=[]; this.selected=i; e.currentTarget.focus?.({preventScroll:true}); if(this.cropIndex!==i)this.cropIndex=null; if(this.cropIndex===i&&mode==='move')mode='crop'; const snapshot=this.snapshot(); const d=this.current.data; const r=this.$refs.paper.getBoundingClientRect(); this.gesture={mode,corner,snapshot,changed:false,x:e.clientX,y:e.clientY,d:JSON.parse(JSON.stringify(d)),cx:r.left+(Number(d.x_pt)+Number(d.width_pt)/2)*this.zoom,cy:r.top+(Number(d.y_pt)+Number(d.height_pt)/2)*this.zoom};
+        duplicate() { if(this.drawingSession && !this.finishDrawing())return;if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); const b=JSON.parse(JSON.stringify(this.current)); b._key=this.nextKey++; delete b.data.id; b.data.name+=' (copy)'; b.data.x_pt=Number(b.data.x_pt)+12; b.data.y_pt=Number(b.data.y_pt)+12; this.normalize(b); this.blocks.push(b); this.selected=this.blocks.length-1; },
+        remove() { if(this.drawingSession?.creating){this.cancelDrawing();return;}if(this.drawingSession)this.finishDrawing();if(this.textEditing)this.commitTextEditing();if (!this.current) return; this.checkpoint(); this.blocks.splice(this.selected,1); this.selected=null; this.cropIndex=null; },
+        layer(delta) { if(this.drawingSession && !this.finishDrawing())return;const i=this.selected, j=i+delta; if(i===null||j<0||j>=this.blocks.length)return; this.checkpoint(); [this.blocks[i],this.blocks[j]]=[this.blocks[j],this.blocks[i]]; this.selected=j; this.cropIndex=null; },
+        start(e,i,mode,corner='se') { if(e.button!==0||this.nativePinch||this.saving||this.isDrawingEditing(this.blocks[i])||this.isTextEditing(this.blocks[i])||e.target?.closest?.('[data-canvas-text-editor]'))return;if(this.textEditing)this.commitTextEditing(); if(this.drawingSession && this.drawingSession.key!==this.blocks[i]._key)this.finishDrawing();e.preventDefault(); this.snapGuides=[]; this.selected=i; e.currentTarget.focus?.({preventScroll:true}); if(this.cropIndex!==i)this.cropIndex=null; if(this.cropIndex===i&&mode==='move')mode='crop'; const snapshot=this.snapshot(); const d=this.current.data; const r=this.$refs.paper.getBoundingClientRect(); this.gesture={mode,corner,snapshot,changed:false,x:e.clientX,y:e.clientY,d:JSON.parse(JSON.stringify(d)),cx:r.left+(Number(d.x_pt)+Number(d.width_pt)/2)*this.zoom,cy:r.top+(Number(d.y_pt)+Number(d.height_pt)/2)*this.zoom};
         if(this.cropIndex===i){
             const t=d.properties.image_transform;
             this.gesture.mode='image-'+(mode==='crop'?'move':mode);
@@ -705,6 +710,11 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             this.checkpoint(gesture.snapshot ?? this.snapshot());gesture.changed=true;
         },
         move(e) { if(!this.gesture||!this.current)return; const g=this.gesture,d=this.current.data,dx=(e.clientX-g.x)/this.zoom,dy=(e.clientY-g.y)/this.zoom; const snap=v=>this.snap(v);this.snapGuides=[];
+        if(g.mode==='drawing-point'){
+            const angle=-Number(g.d.rotation_deg || 0)*Math.PI/180,point=g.d.properties.drawing.points[g.point];
+            d.properties.drawing.points[g.point]={x:Math.max(0,Math.min(100,point.x+(dx*Math.cos(angle)+dy*Math.sin(angle))/Number(d.width_pt)*100)),y:Math.max(0,Math.min(100,point.y+(-dx*Math.sin(angle)+dy*Math.cos(angle))/Number(d.height_pt)*100))};
+            this.checkpointGesture();return;
+        }
         if(g.mode.startsWith('image-')){
             const old=g.d.properties.image_transform,t=d.properties.image_transform;
             const a=-Number(g.d.rotation_deg)*Math.PI/180,lx=dx*Math.cos(a)+dy*Math.sin(a),ly=-dx*Math.sin(a)+dy*Math.cos(a);
@@ -739,7 +749,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         const bounds=elementBounds(d);
         this.snapGuides=this.snapGuides.filter(guide=>bounds[guide.axis].some(value=>Math.abs(value-guide.position)<.00001));
     },
-        style(b,i) { const d=b.data;return {left:d.x_pt+'px',top:d.y_pt+'px',width:d.width_pt+'px',height:d.height_pt+'px',transform:`rotate(${-Number(d.rotation_deg)}deg)`,zIndex:i+1,opacity:d.visible===false?.25:1,color:d.properties?.color||'#222',fontSize:(d.properties?.font_size||(b.type==='table'?8:12))+'px',textAlign:d.properties?.align||'center'}; },
+        style(b,i) { const d=b.data;return {left:d.x_pt+'px',top:d.y_pt+'px',width:d.width_pt+'px',height:d.height_pt+'px',transform:`rotate(${-Number(d.rotation_deg)}deg)`,zIndex:i+1,opacity:d.visible===false?.25:1,color:d.properties?.color||'#222',cursor:this.drawingSession?.creating?'crosshair':'move',fontSize:(d.properties?.font_size||(b.type==='table'?8:12))+'px',textAlign:d.properties?.align||'center'}; },
         onPreviewLoad() {
         if (this.destroyed || !this.$refs.preview?.srcdoc) return;
         const doc=this.$refs.preview.contentDocument,page=doc?.querySelector('.page');
@@ -771,7 +781,9 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         escape(value) { return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
         syncPreview() {
         if (this.destroyed || !this.previewReady||!this.previewAnchor?.isConnected) return;
-        const doc=this.$refs.preview.contentDocument,visible=[],active=new Set();
+        const doc=this.$refs?.preview?.contentDocument;
+        if(!doc || doc!==this.previewAnchor.ownerDocument)return;
+        const visible=[],active=new Set();
         this.blocks.forEach((b,index)=>{
             const key=b._key;active.add(key);
             let node=this.previewNodes.get(key);
@@ -808,6 +820,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
     },
         async save(wire) {
         if(this.saving||this.imageUploading)return;
+        if(this.drawingSession && !this.finishDrawing())return;
         if(this.textEditing)this.commitTextEditing();
         await this.flushInspector();
         if(this.inspectorInvalid)return;
@@ -830,22 +843,27 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 b._key ??= this.nextKey++;
                 this.nextKey = Math.max(this.nextKey, Number(b._key) + 1);
                 b.data.properties ??= {};
-                if (b.type === 'drawing') b.data.properties.drawing = {...this.drawingDefaults(), ...(b.data.properties.drawing || {})};
+                if (b.type === 'line') b.data.properties.drawing = {...this.drawingDefaults(), ...(b.data.properties.drawing || {})};
             }
         },
         add(type) {
+            if(this.drawingSession && !this.finishDrawing())this.cancelDrawing();
             if(this.saving || this.adding || !Object.hasOwn(this.labels,type))return null;
             const insert=initialized=>{
                 if(this.destroyed)return null;
+                const before={snapshot:this.snapshot(),undoDepth:this.undoStack.length,dirty:this.dirty,redo:[...this.redoStack]};
                 this.checkpoint();
                 const data={
                     name:this.labels[type],x_pt:Math.min(40,this.pageWidth/10),y_pt:Math.min(40,this.pageHeight/10),
-                    width_pt:Math.min(200,this.pageWidth),height_pt:Math.min((this.elementTypes[type]?.kind==='drawing' || type==='drawing')?12:100,this.pageHeight),
+                    width_pt:Math.min(200,this.pageWidth),height_pt:Math.min((this.elementTypes[type]?.kind==='line' || type==='line')?12:100,this.pageHeight),
                     rotation_deg:0,visible:true,image_id:null,references:[],properties:{},...initialized?.data,
                 };
                 const block={_key:this.nextKey++,type,data};
                 this.blocks.push(block);this.selected=this.blocks.length-1;
-                this.normalize(block);this.prepare();this.syncInspector();this.schedulePreview();
+                this.normalize(block);this.prepare();
+                if(this.isDrawing(block))this.beginDrawing(block,before);
+                else this.syncInspector();
+                this.schedulePreview();
                 return block;
             };
             // Server schemas are the sole source of initial values in a mounted editor.

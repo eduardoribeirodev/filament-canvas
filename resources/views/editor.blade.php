@@ -39,26 +39,25 @@
     <div class="fc-layout" x-ref="workspace">
         <nav class="fc-toolbar" aria-label="{{ __('filament-canvas::canvas.add_elements') }}" wire:ignore>
             <ul class="canvas-toolbar-items">
-                @foreach ($elementLabels as $type => $label)
-                    @continue(! ($elementTypes[$type]['toolbar'] ?? true))
-                    <x-filament-canvas::toolbar-item :label="__('filament-canvas::canvas.add_element', ['label' => $label])" :icon="$elementIcons[$type] ?? null"
-                        data-canvas-insert="{{ $type }}" @click="add({{ \Illuminate\Support\Js::from($type) }})" />
-                @endforeach
+                @include('filament-canvas::partials.canvas-toolbar-groups')
             </ul>
             @isset($toolbarView) @include($toolbarView) @endisset
         </nav>
         <div class="fc-stage-column">
+            <div class="fc-stage-viewport">
+                @include('filament-canvas::partials.canvas-drawing-controls')
             <div x-ref="stage" class="fc-stage" wire:ignore tabindex="0" aria-label="{{ __('filament-canvas::canvas.canvas') }}"
-                @keydown="key($event)" @pointerdown.self="commitTextEditing();cropIndex=null;selected=null;$el.focus({preventScroll:true})"
+                @keydown="key($event)" @pointerdown.self="if(drawingSession && !finishDrawing())cancelDrawing();commitTextEditing();cropIndex=null;selected=null;$el.focus({preventScroll:true})"
                 @pointermove.stop="move($event)" @pointerup.stop="endGesture()" @pointercancel.stop="endGesture()" @lostpointercapture="endGesture()"
                 @scroll.passive="positionInlineEditor()" @wheel="wheel($event)" @gesturestart="pinchStart($event)" @gesturechange="pinchChange($event)" @gestureend="pinchEnd($event)">
-                <div x-ref="viewport" :style="viewportStyle()" @pointerdown.self="commitTextEditing();cropIndex=null;selected=null;$refs.stage.focus({preventScroll:true})">
-                    <div class="fc-paper" x-ref="paper" :style="paperStyle()" @pointerdown.self="commitTextEditing();selected=null;cropIndex=null">
+                <div x-ref="viewport" :style="viewportStyle()" @pointerdown.self="if(drawingSession && !finishDrawing())cancelDrawing();commitTextEditing();cropIndex=null;selected=null;$refs.stage.focus({preventScroll:true})">
+                    <div class="fc-paper" x-ref="paper" :style="paperStyle()" @pointerdown.capture="drawingPointerDown($event)" @pointermove.capture="drawingPointerMove($event)" @pointerdown.self="if(drawingSession && !finishDrawing())cancelDrawing();commitTextEditing();selected=null;cropIndex=null">
                         <iframe x-ref="preview" title="{{ __('filament-canvas::canvas.preview') }}" class="fc-preview" @load="onPreviewLoad()"></iframe>
                         <template x-for="(b,i) in blocks" :key="b._key">
-                            <div class="fc-selection" :class="{'fc-selected':selected===i}" :style="style(b,i)" @dblclick.stop="isText(b) ? startTextEditing($event,i) : editCrop($event,i)" @pointerdown.stop="if(!isTextEditing(b)) start($event,i,'move')" tabindex="0" @focus="selected=i" :aria-label="b.data.name">
+                            <div class="fc-selection" :class="{'fc-selected':selected===i}" :style="style(b,i)" @dblclick.stop="isText(b) ? startTextEditing($event,i) : (isDrawing(b) ? editDrawing($event,i) : editCrop($event,i))" @pointerdown.stop="if(!isTextEditing(b)) start($event,i,'move')" tabindex="0" @focus="selected=i" :aria-label="b.data.name">
 
-                                <template x-if="selected===i && !isTextEditing(b)">
+                            @include('filament-canvas::partials.canvas-drawing-points')
+                                <template x-if="selected===i && !isTextEditing(b) && !isDrawingEditing(b)">
                                     <div :style="cropIndex===i ? {...imageStyle(b,false),outline:'2px solid var(--fc-crop)'} : {position:'absolute',inset:0,pointerEvents:'none'}" @pointerdown.stop="start($event,i,'move')">
                                         <button type="button" aria-label="{{ __('filament-canvas::canvas.rotate_selection') }}" class="fc-handle" style="top:-28px;left:calc(50% - 7px);border-radius:50%;cursor:grab" @pointerdown.stop="start($event,i,'rotate')"></button>
                                         @foreach(['nw' => 'top:-7px;left:-7px;cursor:nwse-resize', 'ne' => 'top:-7px;right:-7px;cursor:nesw-resize', 'sw' => 'bottom:-7px;left:-7px;cursor:nesw-resize', 'se' => 'bottom:-7px;right:-7px;cursor:nwse-resize'] as $corner => $style)
@@ -68,9 +67,10 @@
                                 </template>
                             </div>
                         </template>
-                        @include('filament-canvas::partials.canvas-guides')
+                    @include('filament-canvas::partials.canvas-guides')
                     </div>
                 </div>
+            </div>
             </div>
             @include('filament-canvas::partials.canvas-inline-text')
             <div class="fc-footer" wire:ignore>
@@ -90,7 +90,7 @@
                 @include('filament-canvas::partials.canvas-zoom')
             </div>
         </div>
-        <aside class="fc-sidebar" aria-label="{{ __('filament-canvas::canvas.details_layers') }}">
+        <aside :inert="Boolean(drawingSession?.creating)" class="fc-sidebar" aria-label="{{ __('filament-canvas::canvas.details_layers') }}">
             <div class="fc-tabs" wire:ignore>
                 <x-filament::tabs label="{{ __('filament-canvas::canvas.editor_panel') }}" role="tablist">
                     <x-filament::tabs.item icon="heroicon-o-adjustments-horizontal" role="tab" alpine-active="panel === 'properties'" x-bind:aria-selected="panel==='properties'" @click="panel='properties'">{{ __('filament-canvas::canvas.properties') }}</x-filament::tabs.item>

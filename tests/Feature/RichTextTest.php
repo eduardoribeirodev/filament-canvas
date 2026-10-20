@@ -29,13 +29,28 @@ class RichTextTest extends TestCase
         $schema = $element->form(Schema::make($host)->statePath('properties'));
         $schema->fill();
         $field = $schema->getComponentByStatePath('rich_text');
-        foreach (['align', 'bold', 'italic'] as $property) {
+        foreach (['align', 'bold', 'italic', 'color'] as $property) {
             $this->assertNull($schema->getComponentByStatePath($property));
             $this->assertArrayNotHasKey($property, $host->properties);
         }
-        foreach (['bold', 'italic', 'alignStart', 'alignCenter', 'alignEnd', 'alignJustify'] as $tool) {
+        foreach (['bold', 'italic', 'textColor', 'alignStart', 'alignCenter', 'alignEnd', 'alignJustify'] as $tool) {
             $this->assertContains($tool, Arr::flatten($field->getToolbarButtons()));
         }
+    }
+
+    public function test_saved_base_colors_remain_valid_while_the_rich_editor_controls_new_colors(): void
+    {
+        $properties = RichText::normalize(['color' => '#ff0000', 'rich_text' => ['type' => 'doc', 'content' => [[
+            'type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Colored text', 'marks' => [[
+                'type' => 'textColor', 'attrs' => ['data-color' => '#2563eb'],
+            ]]]],
+        ]]]]);
+        ElementValidation::validate(new TextElement, $properties);
+        ElementValidation::validate(new TitleElement, $properties);
+        $this->assertSame('#ff0000', $properties['color']);
+        $this->assertStringContainsString('data-color="#2563eb"', $properties['html']);
+        $this->expectException(ValidationException::class);
+        ElementValidation::validate(new TextElement, [...$properties, 'color' => 'red;position:fixed']);
     }
 
     public function test_titles_seed_bold_marks_and_native_edits_can_remove_them_permanently(): void

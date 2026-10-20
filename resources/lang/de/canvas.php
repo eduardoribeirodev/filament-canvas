@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'line' => 'Linie',
+    'rectangle' => 'Rechteck',
+    'ellipse' => 'Ellipse',
+    'triangle' => 'Dreieck',
+    'arrow' => 'Pfeil',
+    'fill_color' => 'Füllfarbe',
+    'closed_shape' => 'Geschlossene Form',
+    'points' => 'Punkte',
+    'drawing_help' => 'Klicken setzt Punkte. Der erste Punkt schließt die Form. Eingabe beendet; Esc verwirft.',
+    'finish_drawing' => 'Zeichnung abschließen',
+    'cancel_drawing' => 'Zeichnung abbrechen',
+    'drawing_min_points' => 'Mindestens zwei Punkte verwenden, bei geschlossenen Formen drei.',
+
     'title' => 'Titel',
     'text' => 'Text',
     'image' => 'Bild',

@@ -47,10 +47,6 @@ class TextElement extends CanvasElement
                 ->maxValue(100)
                 ->default($this->name === 'title' ? 24 : 12)
                 ->suffix('pt'),
-            ColorPicker::make('color')
-                ->regex('/^#(?:[a-f0-9]{3}|[a-f0-9]{6}|[a-f0-9]{8})$/iD')
-                ->label(__('filament-canvas::canvas.color'))
-                ->default('#222222'),
             TextInput::make('leading')
                 ->label(__('filament-canvas::canvas.line_height'))
                 ->numeric()
