@@ -24,7 +24,6 @@ class CanvasServiceProvider extends ServiceProvider
         }
 
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'filament-canvas');
         $this->loadTranslationsFrom(__DIR__.'/../resources/lang', 'filament-canvas');
         $this->publishes([__DIR__.'/../resources/lang' => $this->app->langPath('vendor/filament-canvas')], 'filament-canvas-translations');
