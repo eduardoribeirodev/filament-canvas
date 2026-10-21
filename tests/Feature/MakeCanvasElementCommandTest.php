@@ -2,6 +2,11 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Tests\Feature;
 
+use App\Canvas\Elements\GeneratedNoticeElement;
+use App\Canvas\Elements\InteractiveQuoteElement;
+use App\Canvas\Elements\Marketing\PromoCardElement;
+use App\Canvas\Elements\PromptedQuoteElement;
+use Company\Canvas\Elements\BannerElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\CanvasElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DataTableElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\DrawingElement;
@@ -9,7 +14,7 @@ use EduardoRibeiroDev\FilamentCanvas\Elements\ImageElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TitleElement;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\ElementMarkup;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementValidation;
 use EduardoRibeiroDev\FilamentCanvas\Tests\TestCase;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
@@ -50,8 +55,8 @@ class MakeCanvasElementCommandTest extends TestCase
             ->assertSuccessful();
 
         require app_path('Canvas/Elements/GeneratedNoticeElement.php');
-        $registry = ElementRegistry::from([\App\Canvas\Elements\GeneratedNoticeElement::class]);
-        $element = $registry->get('generated-notice');
+        $definitions = CanvasElements::list([GeneratedNoticeElement::class]);
+        $element = CanvasElements::resolve($definitions, 'generated-notice');
         $this->assertSame('Generated Notice', $element->getLabel());
         $this->assertSame('canvas.elements.generated-notice', $element->view());
         $this->assertStringContainsString('x-text="data.caption"', ElementMarkup::template($element));
@@ -66,7 +71,7 @@ class MakeCanvasElementCommandTest extends TestCase
         $this->artisan('make:canvas-element', ['--no-interaction' => true, 'name' => 'Marketing/promoCardElement'])->assertSuccessful();
 
         require app_path('Canvas/Elements/Marketing/PromoCardElement.php');
-        $element = new \App\Canvas\Elements\Marketing\PromoCardElement;
+        $element = new PromoCardElement;
         $this->assertSame('marketing-promo-card', $element->type());
         $this->assertSame('Promo Card', $element->getLabel());
         $this->assertSame('canvas.elements.marketing.promo-card', $element->view());
@@ -80,7 +85,7 @@ class MakeCanvasElementCommandTest extends TestCase
         $this->artisan('make:canvas-element', ['--no-interaction' => true, 'name' => 'Company\\Canvas\\Elements\\banner_element'])->assertSuccessful();
 
         require app_path('Canvas/Elements/BannerElement.php');
-        $element = new \Company\Canvas\Elements\BannerElement;
+        $element = new BannerElement;
         $this->assertSame('banner', $element->type());
         $this->assertSame('canvas.elements.banner', $element->view());
     }
@@ -138,7 +143,7 @@ class MakeCanvasElementCommandTest extends TestCase
             ->assertSuccessful();
 
         require app_path('Canvas/Elements/InteractiveQuoteElement.php');
-        $element = new \App\Canvas\Elements\InteractiveQuoteElement;
+        $element = new InteractiveQuoteElement;
         $this->assertInstanceOf(TextElement::class, $element);
         $this->assertStringContainsString('x-html="data.html"', ElementMarkup::template($element));
     }
@@ -151,7 +156,7 @@ class MakeCanvasElementCommandTest extends TestCase
             ->assertSuccessful();
 
         require app_path('Canvas/Elements/PromptedQuoteElement.php');
-        $element = new \App\Canvas\Elements\PromptedQuoteElement;
+        $element = new PromptedQuoteElement;
         $this->assertInstanceOf(TextElement::class, $element);
         $this->assertSame('prompted-quote', $element->type());
         $this->assertStringContainsString('x-html="data.html"', ElementMarkup::template($element));
@@ -178,7 +183,7 @@ class MakeCanvasElementCommandTest extends TestCase
             $this->assertSame($parent->getIcon(), $element->getIcon());
             $this->assertSame($parent->mediaCollections(), $element->mediaCollections());
             $this->assertTrue($element->showInToolbar());
-            $this->assertSame($kind, ElementRegistry::kind($element));
+            $this->assertSame($kind, CanvasElements::kind($element));
             $this->assertSame(ElementMarkup::template($parent), ElementMarkup::template($element));
 
             $properties = $this->defaultProperties($element);

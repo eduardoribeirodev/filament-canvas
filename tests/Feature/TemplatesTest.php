@@ -14,7 +14,7 @@ use EduardoRibeiroDev\FilamentCanvas\Livewire\CanvasEditor;
 use EduardoRibeiroDev\FilamentCanvas\Models\Concerns\HasCanvas;
 use EduardoRibeiroDev\FilamentCanvas\Pages\EditCanvas;
 use EduardoRibeiroDev\FilamentCanvas\Schemas\Components\Canvas;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Tests\TestCase;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
@@ -92,7 +92,7 @@ class TemplatesTest extends TestCase
         $this->assertSame('AK', $this->templatesOwner->canvasElements()->first()->properties['badge']);
         $this->assertArrayHasKey('notice', $editor->instance()->render()->getData()['elementTemplates']);
         Livewire::test(CanvasEditor::class, CanvasTemplateOverridePage::editorParameters($this->templatesOwner->id))->assertOk();
-        $this->assertNotContains('notice', ElementRegistry::forOwner($this->templatesOwner)->types());
+        $this->assertNotContains('notice', CanvasElements::types(CanvasElements::forOwner($this->templatesOwner)));
         $other = CanvasTemplateDocument::create();
         $view = Livewire::test(CanvasEditor::class, CanvasTemplatePage::editorParameters($other->id))->instance()->render()->getData();
         $this->assertSame(['title'], array_keys($view['elementTypes']));

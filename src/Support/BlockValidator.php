@@ -10,12 +10,12 @@ use Illuminate\Validation\ValidationException;
 
 final class BlockValidator
 {
-    public function validate(array $blocks, CanvasDocument $document, ElementRegistry $elements): void
+    public function validate(array $blocks, CanvasDocument $document, array $elements): void
     {
         $rules = [
             'blocks' => ['present', 'array', 'max:300'],
             'blocks.*' => ['required', 'array:type,data'],
-            'blocks.*.type' => ['required', Rule::in($elements->types())],
+            'blocks.*.type' => ['required', Rule::in(CanvasElements::types($elements))],
             'blocks.*.data' => ['required', 'array'],
             'blocks.*.data.id' => ['nullable'],
             'blocks.*.data.name' => ['present', 'string', 'max:255'],
@@ -32,8 +32,8 @@ final class BlockValidator
         $elementErrors = [];
         $elementFailures = [];
         foreach ($blocks as $index => $block) {
-            if (is_array($block) && in_array($block['type'] ?? null, $elements->types(), true)) {
-                $element = $elements->get($block['type']);
+            if (is_array($block) && in_array($block['type'] ?? null, CanvasElements::types($elements), true)) {
+                $element = CanvasElements::resolve($elements, $block['type']);
                 $envelope = ['id', 'name', 'x_pt', 'y_pt', 'width_pt', 'height_pt', 'rotation_deg', 'visible', 'properties', 'image_id', 'image_url', 'references'];
                 $prefix = 'blocks.'.$index.'.data.properties.';
                 $properties = is_array($block['data']['properties'] ?? null) ? $block['data']['properties'] : [];

@@ -8,7 +8,7 @@ use EduardoRibeiroDev\FilamentCanvas\Contracts\ElementType;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\PreviewRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\EloquentDocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\CanvasRenderer;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use Filament\Contracts\Plugin;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Model;
@@ -24,7 +24,7 @@ class CanvasPlugin implements Plugin
 
     private array $documentElementTypes = [];
 
-    private ElementRegistry $registry;
+    private array $elementDefinitions;
 
     private ?array $defaultElements = null;
 
@@ -36,7 +36,7 @@ class CanvasPlugin implements Plugin
 
     public function __construct()
     {
-        $this->registry = ElementRegistry::configured();
+        $this->elementDefinitions = CanvasElements::configured();
     }
 
     public static function make(): static
@@ -67,11 +67,11 @@ class CanvasPlugin implements Plugin
             throw new InvalidArgumentException('The document model must implement CanvasOwner.');
         }
 
-        $elements = (new $model)->canvasElementRegistry();
-        foreach ($elements->types() as $elementType) {
-            $this->registry->register($elements->get($elementType));
+        $elements = (new $model)->availableCanvasElements();
+        foreach (CanvasElements::types($elements) as $elementType) {
+            $this->elementDefinitions[] = CanvasElements::resolve($elements, $elementType);
         }
-        $this->documentElementTypes[$type] ??= $elements->types();
+        $this->documentElementTypes[$type] ??= CanvasElements::types($elements);
 
         return $this->documentStore($type, new EloquentDocumentStore($model));
     }
@@ -110,7 +110,7 @@ class CanvasPlugin implements Plugin
 
     public function element(string|ElementType $element): static
     {
-        $this->registry->register($element);
+        $this->elementDefinitions[] = $element;
         $this->extraElementClasses[] = $element;
 
         return $this;
@@ -123,26 +123,26 @@ class CanvasPlugin implements Plugin
         return $this;
     }
 
-    /** An array replaces the available types; no argument returns their registry. */
-    public function elements(array|string|null $documentType = null): ElementRegistry|static
+    /** An array replaces the available types; no argument returns their element list. */
+    public function elements(array|string|null $documentType = null): array|static
     {
         if (is_array($documentType)) {
             $this->defaultElements = $documentType;
-            $this->registry = ElementRegistry::from([...$documentType, ...$this->extraElementClasses]);
+            $this->elementDefinitions = CanvasElements::list([...$documentType, ...$this->extraElementClasses]);
 
             return $this;
         }
 
         return isset($this->documentElementTypes[$documentType])
-            ? $this->registry->only($this->documentElementTypes[$documentType])
-            : $this->registry;
+            ? CanvasElements::only($this->elementDefinitions, $this->documentElementTypes[$documentType])
+            : $this->elementDefinitions;
     }
 
     public function extraElements(array $elements): static
     {
         $this->extraElementClasses = [...$this->extraElementClasses, ...$elements];
         foreach ($elements as $element) {
-            $this->registry->register($element);
+            $this->elementDefinitions[] = $element;
         }
 
         return $this;
@@ -172,21 +172,21 @@ class CanvasPlugin implements Plugin
             ?? (method_exists($owner, 'canvasElementsAvailable') ? $owner->canvasElementsAvailable() : null)
             ?? $this->defaultElements;
         if ($selected === null) {
-            $registry = ElementRegistry::configured();
+            $definitions = CanvasElements::configured();
             // Owner definitions keep historical/domain types readable outside the panel.
-            $ownerElements = (new $model)->canvasElementRegistry();
-            foreach ($ownerElements->types() as $elementType) {
-                $registry->register($ownerElements->get($elementType));
+            $ownerElements = (new $model)->availableCanvasElements();
+            foreach (CanvasElements::types($ownerElements) as $elementType) {
+                $definitions[] = CanvasElements::resolve($ownerElements, $elementType);
             }
         } else {
-            $registry = ElementRegistry::from($selected);
+            $definitions = CanvasElements::list($selected);
         }
         foreach ($options['extraElements'] ?? (array_key_exists('elements', $options) ? [] : $this->extraElementClasses) as $element) {
-            $registry->register($element);
+            $definitions[] = $element;
         }
-        $plugin->registry = $registry;
+        $plugin->elementDefinitions = $definitions;
         unset($plugin->documentElementTypes[$type], $plugin->renderers[$type]);
-        $plugin->stores[$type] = new EloquentDocumentStore($model, $registry);
+        $plugin->stores[$type] = new EloquentDocumentStore($model, $definitions);
         if (isset($options['template'])) {
             $plugin->template($options['template']);
         } elseif (method_exists($owner, 'canvasTemplate') && $owner->canvasTemplate() !== null) {
@@ -205,14 +205,14 @@ class CanvasPlugin implements Plugin
             return $this->forModel($type, $options['model'], $options);
         }
         $plugin = clone $this;
-        $registry = isset($options['elements']) ? ElementRegistry::from($options['elements']) : clone $this->elements($type);
+        $definitions = isset($options['elements']) ? CanvasElements::list($options['elements']) : $this->elements($type);
         foreach ($options['extraElements'] ?? [] as $element) {
-            $registry->register($element);
+            $definitions[] = $element;
         }
-        $plugin->registry = $registry;
+        $plugin->elementDefinitions = $definitions;
         unset($plugin->documentElementTypes[$type]);
         if (($plugin->stores[$type] ?? null) instanceof EloquentDocumentStore) {
-            $plugin->stores[$type] = $plugin->stores[$type]->withElements($registry);
+            $plugin->stores[$type] = $plugin->stores[$type]->withElements($definitions);
         }
         if (isset($options['template'])) {
             $plugin->template($options['template']);

@@ -16,9 +16,9 @@ use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Examples\JsonDocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\CanvasRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\ElementMarkup;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\ElementViewData;
 use EduardoRibeiroDev\FilamentCanvas\Support\BlockValidator;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementValidation;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 use EduardoRibeiroDev\FilamentCanvas\Tests\Support\TestDocument;
@@ -117,7 +117,7 @@ class ElementTypesTest extends TestCase
             try {
                 app(BlockValidator::class)->validate([[
                     'type' => 'text', 'data' => $this->elementApiColore() + ['properties' => []] + $old,
-                ]], new CanvasDocument([], 300, 200), ElementRegistry::defaults());
+                ]], new CanvasDocument([], 300, 200), CanvasElements::defaults());
                 $this->fail('An old envelope must not be accepted.');
             } catch (ValidationException $exception) {
                 $this->assertArrayHasKey('blocks.0.data', $exception->errors());
@@ -147,7 +147,7 @@ class ElementTypesTest extends TestCase
             $schema->dehydrateState($state);
             $schema->mutateDehydratedState($state);
             $properties = $element->normalize($state['properties']);
-            app(BlockValidator::class)->validate([['type' => $element->type(), 'data' => $this->elementApiColore() + ['properties' => $properties]]], new CanvasDocument([], 300, 200), ElementRegistry::defaults());
+            app(BlockValidator::class)->validate([['type' => $element->type(), 'data' => $this->elementApiColore() + ['properties' => $properties]]], new CanvasDocument([], 300, 200), CanvasElements::defaults());
             $this->assertNotEmpty($properties);
         }
     }
@@ -169,24 +169,24 @@ class ElementTypesTest extends TestCase
     public function test_custom_type_registers_its_schema_view_icon_and_document_scope(): void
     {
         $plugin = CanvasPlugin::make()->element(CanvasSchemaBadge::class)->documentElements('labels', ['badge']);
-        $registry = $plugin->elements('labels');
-        $this->assertSame(['badge'], $registry->types());
-        $this->assertSame('heroicon-o-tag', $registry->metadataForEditor()['badge']['icon']);
-        $this->assertSame('Selo', $registry->labels()['badge']);
+        $definitions = $plugin->elements('labels');
+        $this->assertSame(['badge'], CanvasElements::types($definitions));
+        $this->assertSame('heroicon-o-tag', CanvasElements::metadataForEditor($definitions)['badge']['icon']);
+        $this->assertSame('Selo', CanvasElements::labels($definitions)['badge']);
         $properties = ['text' => 'Personalizado', 'enabled' => false, 'offset' => 0];
         $block = ['type' => 'badge', 'data' => $this->elementApiColore() + ['properties' => $properties]];
-        app(BlockValidator::class)->validate([$block], new CanvasDocument([], 300, 200), $registry);
-        $html = (new CanvasRenderer($registry))->render(new CanvasDocument([$block], 300, 200), $this->elementApiContext());
+        app(BlockValidator::class)->validate([$block], new CanvasDocument([], 300, 200), $definitions);
+        $html = (new CanvasRenderer($definitions))->render(new CanvasDocument([$block], 300, 200), $this->elementApiContext());
         $this->assertStringContainsString('Personalizado', $html);
         $this->assertStringContainsString('data-kind="badge"', $html);
-        $this->assertContains('text', $plugin->elements()->types());
+        $this->assertContains('text', CanvasElements::types($plugin->elements()));
     }
 
     public function test_properties_not_declared_by_the_type_and_invalid_canonical_data_are_rejected(): void
     {
         foreach ([['text' => 'Valid', 'rows' => []], 'invalid'] as $properties) {
             try {
-                app(BlockValidator::class)->validate([['type' => 'text', 'data' => $this->elementApiColore() + ['properties' => $properties]]], new CanvasDocument([], 300, 200), ElementRegistry::defaults());
+                app(BlockValidator::class)->validate([['type' => 'text', 'data' => $this->elementApiColore() + ['properties' => $properties]]], new CanvasDocument([], 300, 200), CanvasElements::defaults());
                 $this->fail('Unexpected properties and invalid containers must be rejected.');
             } catch (ValidationException $exception) {
                 $this->assertNotEmpty($exception->errors());
@@ -202,13 +202,13 @@ class ElementTypesTest extends TestCase
         $source = $owner->addMedia(UploadedFile::fake()->image('authorized.png'))->toMediaCollection('library');
         $context = (new EditorContext(new DocumentReference('test-document', $owner->id), auth()->user()))->forDocument($owner);
         $element = new CanvasCustomMediaElement;
-        $registry = (new ElementRegistry)->register($element);
+        $definitions = [$element];
         $block = ['type' => 'custom-media', 'data' => $this->elementApiColore() + ['image_id' => $source->id, 'properties' => ['fit' => 'contain', 'flip_x' => true]]];
-        $html = (new CanvasRenderer($registry))->render(new CanvasDocument([$block], 300, 200), $context);
+        $html = (new CanvasRenderer($definitions))->render(new CanvasDocument([$block], 300, 200), $context);
         $this->assertStringContainsString($source->getUrl(), $html);
         $this->assertStringContainsString('&quot;flip_x&quot;:true', $html);
         $this->assertStringContainsString(':style="data.image_style"', $html);
-        $this->assertSame('image_id', $registry->metadataForEditor()['custom-media']['media_collections']['image']['reference_field']);
+        $this->assertSame('image_id', CanvasElements::metadataForEditor($definitions)['custom-media']['media_collections']['image']['reference_field']);
         $this->assertFalse($element instanceof ImageElement);
     }
 
@@ -221,19 +221,19 @@ class ElementTypesTest extends TestCase
         $second = $owner->addMedia(UploadedFile::fake()->image('two.png'))->toMediaCollection('library');
         $context = (new EditorContext(new DocumentReference('test-document', $owner->id), auth()->user()))->forDocument($owner);
         $element = new CanvasMultiMediaElement;
-        $registry = (new ElementRegistry)->register($element);
+        $definitions = [$element];
         $block = ['type' => 'gallery', 'data' => $this->elementApiColore() + ['image_id' => 1, 'gallery_ids' => [2, 99], 'properties' => []]];
-        app(BlockValidator::class)->validate([$block], new CanvasDocument([], 300, 200), $registry);
+        app(BlockValidator::class)->validate([$block], new CanvasDocument([], 300, 200), $definitions);
         $media = (new MediaLibrary($context))->resolve($element, $block);
         $this->assertSame(1, $media['image']['id']);
         $this->assertSame([2], array_column($media['gallery'], 'id'));
-        $html = (new CanvasRenderer($registry))->render(new CanvasDocument([$block], 300, 200), $context);
+        $html = (new CanvasRenderer($definitions))->render(new CanvasDocument([$block], 300, 200), $context);
         $this->assertStringContainsString($first->getUrl(), $html);
         $this->assertStringNotContainsString('&amp;amp;', $html);
         foreach ([[1, 2, 3], [['malformed']]] as $references) {
             $block['data']['gallery_ids'] = $references;
             try {
-                app(BlockValidator::class)->validate([$block], new CanvasDocument([], 300, 200), $registry);
+                app(BlockValidator::class)->validate([$block], new CanvasDocument([], 300, 200), $definitions);
                 $this->fail('Collection limits and scalar IDs must be validated.');
             } catch (ValidationException $exception) {
                 $this->assertNotEmpty($exception->errors());
@@ -243,15 +243,15 @@ class ElementTypesTest extends TestCase
 
     public function test_registry_derives_behavior_and_templates_from_element_classes(): void
     {
-        $registry = ElementRegistry::from([new CanvasSchemaBadge, new TextElement('notice'), new ImageElement('portrait')]);
-        $metadata = $registry->metadataForEditor();
+        $definitions = CanvasElements::list([new CanvasSchemaBadge, new TextElement('notice'), new ImageElement('portrait')]);
+        $metadata = CanvasElements::metadataForEditor($definitions);
         $this->assertSame('text', $metadata['notice']['kind']);
         $this->assertSame('image', $metadata['portrait']['kind']);
         $this->assertSame('element', $metadata['badge']['kind']);
         $this->assertArrayNotHasKey('capabilities', $metadata['notice']);
         $this->assertFalse($metadata['portrait']['toolbar']);
         $this->assertTrue($metadata['badge']['toolbar']);
-        $templates = $registry->templates();
+        $templates = CanvasElements::templates($definitions);
         $this->assertStringContainsString('x-html="data.html"', $templates['badge']);
         $this->assertStringContainsString('class="block-link"', $templates['badge']);
     }
@@ -357,7 +357,7 @@ class ElementTypesTest extends TestCase
             try {
                 app(BlockValidator::class)->validate([
                     ['type' => $element->type(), 'data' => $this->elementApiColore() + ['properties' => $invalid]],
-                ], new CanvasDocument([], 300, 200), ElementRegistry::from([$element]));
+                ], new CanvasDocument([], 300, 200), CanvasElements::list([$element]));
                 $this->fail('Invalid form values must also fail document validation.');
             } catch (ValidationException $exception) {
                 $this->assertEqualsCanonicalizing(
@@ -386,7 +386,7 @@ class ElementTypesTest extends TestCase
                 ]);
             }
         };
-        $registry = ElementRegistry::from([$element]);
+        $definitions = CanvasElements::list([$element]);
         $first = ['mode' => 'manual', 'value' => 'First', 'confirmation' => 'First', 'note' => 'Required', 'items' => [['code' => 'P1', 'label' => 'Product']]];
         $second = ['mode' => 'auto'];
         $blocks = array_map(fn ($properties) => [
@@ -394,7 +394,7 @@ class ElementTypesTest extends TestCase
         ], [$first, $second]);
         ElementValidation::validate($element, $first);
         ElementValidation::validate($element, $second);
-        app(BlockValidator::class)->validate($blocks, new CanvasDocument([], 300, 200), $registry);
+        app(BlockValidator::class)->validate($blocks, new CanvasDocument([], 300, 200), $definitions);
 
         foreach ([
             [['value' => 'Second'], 'confirmation'],
@@ -408,7 +408,7 @@ class ElementTypesTest extends TestCase
             $this->assertArrayHasKey($expected, $validator->errors()->toArray());
             $blocks[1]['data']['properties'] = $properties;
             try {
-                app(BlockValidator::class)->validate($blocks, new CanvasDocument([], 300, 200), $registry);
+                app(BlockValidator::class)->validate($blocks, new CanvasDocument([], 300, 200), $definitions);
                 $this->fail('Dependent rules must reject invalid values in the second block.');
             } catch (ValidationException $exception) {
                 $this->assertSame(['blocks.1.data.properties.'.$expected], array_keys($exception->errors()));
@@ -426,7 +426,7 @@ class ElementTypesTest extends TestCase
             app(BlockValidator::class)->validate([
                 ['type' => 'asset', 'data' => $this->elementApiColore() + ['properties' => []]],
                 ['type' => 'asset', 'data' => $this->elementApiColore() + ['properties' => $properties]],
-            ], new CanvasDocument([], 300, 200), ElementRegistry::defaults());
+            ], new CanvasDocument([], 300, 200), CanvasElements::defaults());
             $this->fail('A partial image transform must not be saved.');
         } catch (ValidationException $exception) {
             $this->assertSame(['blocks.1.data.properties.image_transform.height'], array_keys($exception->errors()));

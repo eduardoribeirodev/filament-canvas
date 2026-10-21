@@ -2,6 +2,7 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Tests\Feature;
 
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\CanvasPlugin;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Data\DocumentReference;
@@ -115,7 +116,7 @@ class PersistenceTest extends TestCase
         config()->set('filament-canvas.elements', [CanvasTestNoticeElement::class]);
         $owner = CanvasTestDocument::create();
         $plugin = CanvasPlugin::make()->documentModel('document', CanvasTestDocument::class);
-        $this->assertContains('notice', $plugin->elements('document')->types());
+        $this->assertContains('notice', CanvasElements::types($plugin->elements('document')));
         $store = $plugin->resolveDocumentStore('document');
         $context = $this->persistenceContext($owner);
         $block = $this->persistenceBlock('Aviso');

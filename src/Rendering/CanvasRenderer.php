@@ -2,16 +2,16 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Rendering;
 
-use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasRenderData;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
+use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasRenderData;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\DocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\PreviewRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
 use EduardoRibeiroDev\FilamentCanvas\Data\DocumentReference;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\EloquentDocumentStore;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Gate;
 class CanvasRenderer implements PreviewRenderer
 {
     public function __construct(
-        private ElementRegistry $elements,
+        private array $elements,
         private string $template = 'filament-canvas::templates.blank',
         private string|DocumentStore|null $store = null,
     ) {}
@@ -46,7 +46,7 @@ class CanvasRenderer implements PreviewRenderer
             $owner,
         );
 
-        return ElementRegistry::using(
+        return CanvasElements::using(
             $owner::class,
             $this->elements,
             fn () => $this->renderDocument($document, $context, $preview),
@@ -95,13 +95,13 @@ class CanvasRenderer implements PreviewRenderer
     private function renderBlocks(CanvasDocument $document, EditorContext $context): string
     {
         $blocks = '';
-        $templates = $this->elements->templates();
+        $templates = CanvasElements::templates($this->elements);
         foreach ($document->blocks as $index => $block) {
             $data = $block['data'];
             if (($data['visible'] ?? true) === false) {
                 continue;
             }
-            $element = $this->elements->get($block['type']);
+            $element = CanvasElements::resolve($this->elements, $block['type']);
             $data['properties'] = ElementData::normalize($element, ElementData::from($data));
             $block['data'] = $data;
             $config = $data['properties'];

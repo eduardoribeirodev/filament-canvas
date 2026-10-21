@@ -6,7 +6,7 @@ use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Support\BlockValidator;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -41,11 +41,11 @@ class ElementPersistence
                 throw ValidationException::withMessages(['blocks' => __('filament-canvas::canvas.stale_document')]);
             }
             [$width, $height] = $owner->canvasSize();
-            app(BlockValidator::class)->validate($blocks, new CanvasDocument($blocks, $width, $height), ElementRegistry::forOwner($owner));
+            app(BlockValidator::class)->validate($blocks, new CanvasDocument($blocks, $width, $height), CanvasElements::forOwner($owner));
             Validator::make(['blocks' => $blocks], ['blocks.*.data.id' => ['nullable', 'integer', 'distinct']])->validate();
             if ($context !== null) {
                 $context = $context->forDocument($owner);
-                (new MediaLibrary($context))->validateReferences($blocks, ElementRegistry::forOwner($owner));
+                (new MediaLibrary($context))->validateReferences($blocks, CanvasElements::forOwner($owner));
             }
             $existing = $owner->canvasElements()->get()->keyBy('id');
             $kept = [];

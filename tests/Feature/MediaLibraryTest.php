@@ -10,7 +10,7 @@ use EduardoRibeiroDev\FilamentCanvas\Elements\CanvasElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\ImageElement;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Livewire\CanvasEditor;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 use EduardoRibeiroDev\FilamentCanvas\Tests\Support\TestDocument;
 use EduardoRibeiroDev\FilamentCanvas\Tests\TestCase;
@@ -65,7 +65,7 @@ class MediaLibraryTest extends TestCase
         $this->assertSame([$photo->id], array_column($library->assets($element, 'gallery'), 'id'));
         $this->assertNull($library->find($foreign->id, $element, 'image'));
         $this->assertNull($library->find($photo->id, $element, 'image'));
-        $metadata = ElementRegistry::from([$element])->metadataForEditor();
+        $metadata = CanvasElements::metadataForEditor(CanvasElements::list([$element]));
         $this->assertArrayNotHasKey('query', $metadata['asset']['media_collections']['image']);
         json_encode($metadata, JSON_THROW_ON_ERROR);
     }
@@ -147,9 +147,9 @@ class MediaLibraryTest extends TestCase
         };
         $this->assertInstanceOf(HasIcon::class, $element);
         $this->assertInstanceOf(HasLabel::class, $element);
-        $registry = ElementRegistry::from([$element]);
-        $this->assertSame(['text' => 'Selo'], $registry->labels());
-        $this->assertSame(Heroicon::OutlinedTag->value, $registry->metadataForEditor()['text']['icon']);
+        $definitions = CanvasElements::list([$element]);
+        $this->assertSame(['text' => 'Selo'], CanvasElements::labels($definitions));
+        $this->assertSame(Heroicon::OutlinedTag->value, CanvasElements::metadataForEditor($definitions)['text']['icon']);
         $owner = TestDocument::create();
         $this->panel($this->plugin($element));
         $editor = Livewire::test(CanvasEditor::class, ['documentType' => 'document', 'documentId' => $owner->id, 'panelId' => 'direct-media'])

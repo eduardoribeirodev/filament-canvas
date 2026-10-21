@@ -1,7 +1,7 @@
 {
     "name": "eduardoribeirodev/filament-canvas",
     "description": "Reusable visual document editor for Filament with pluggable persistence, assets and element types.",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "type": "library",
     "license": "MIT",
     "require": {

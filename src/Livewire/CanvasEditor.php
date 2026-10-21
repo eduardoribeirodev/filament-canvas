@@ -11,9 +11,9 @@ use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\EloquentDocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\Html;
 use EduardoRibeiroDev\FilamentCanvas\Support\BlockValidator;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\EditorConfiguration;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -120,7 +120,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             return $schema->components([]);
         }
 
-        $schema = $this->plugin()->elements($this->documentType)->get($this->inspectorType)
+        $schema = CanvasElements::resolve($this->plugin()->elements($this->documentType), $this->inspectorType)
             ->form($schema);
         $this->configurePropertyFields($schema);
 
@@ -132,7 +132,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     public function createElement(string $type): array
     {
         $this->plugin()->resolveDocumentStore($this->documentType)->authorize($this->context(), 'update');
-        $element = $this->plugin()->elements($this->documentType)->get($type);
+        $element = CanvasElements::resolve($this->plugin()->elements($this->documentType), $type);
         $this->elementCreationData = [];
         $schema = $element->form(Schema::make($this)->statePath('elementCreationData'));
         $schema->fill();
@@ -153,7 +153,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         }
         if ($type !== null) {
             $this->validateElementEnvelope($block, $type);
-            $this->plugin()->elements($this->documentType)->get($type);
+            CanvasElements::resolve($this->plugin()->elements($this->documentType), $type);
         }
         $this->inspectorType = $type;
         $this->inspectorAssetCache = [];
@@ -162,7 +162,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $this->inspectorRevision = 0;
         $this->inspectorBlock = $type === null ? [] : $block;
         if ($type !== null) {
-            $this->inspectorBlock['data']['properties'] = ElementData::normalize($this->plugin()->elements($this->documentType)->get($type), $this->inspectorBlock['data']['properties']);
+            $this->inspectorBlock['data']['properties'] = ElementData::normalize(CanvasElements::resolve($this->plugin()->elements($this->documentType), $type), $this->inspectorBlock['data']['properties']);
         }
         unset($this->cachedSchemas['propertiesForm'], $this->cachedSchemas['imageForm'], $this->cachedSchemas['imageUploadForm'], $this->cachedSchemas['inlineTextForm']);
         $properties = $type === null ? [] : ElementData::from($this->inspectorBlock['data'] ?? []);
@@ -205,7 +205,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $this->inspectorBlock = $block;
         $original = ElementData::from($this->inspectorBlock['data'] ?? []);
         $properties = $this->mergeSchemaState($this->propertiesForm, $original, $patch);
-        $element = $plugin->elements($this->documentType)->get($this->inspectorType);
+        $element = CanvasElements::resolve($plugin->elements($this->documentType), $this->inspectorType);
         $normalized = ElementData::normalize($element, $properties);
         // Return changed root properties with their unrepresented nested state preserved.
         $patch = [];
@@ -228,7 +228,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     private function validateElementEnvelope(array $block, ?string $type = null): void
     {
         Validator::make($block, [
-            'type' => ['required', 'string', Rule::in($type === null ? $this->plugin()->elements($this->documentType)->types() : [$type])],
+            'type' => ['required', 'string', Rule::in($type === null ? CanvasElements::types($this->plugin()->elements($this->documentType)) : [$type])],
             'data' => ['required', 'array'], 'data.properties' => ['sometimes', 'array'],
         ])->validate();
     }
@@ -304,7 +304,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     /** One native deferred editor on the stage; the canvas commits its JSON as a single edit. */
     public function inlineTextForm(Schema $schema): Schema
     {
-        $definition = $this->inspectorType === null ? new TextElement : $this->plugin()->elements($this->documentType)->get($this->inspectorType);
+        $definition = $this->inspectorType === null ? new TextElement : CanvasElements::resolve($this->plugin()->elements($this->documentType), $this->inspectorType);
         $textElement = $definition instanceof TextElement ? $definition : new TextElement;
 
         return $schema->statePath('inlineTextData')->components([
@@ -392,8 +392,8 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     /** Collection metadata drives both native pickers and upload validation. */
     public function elementMediaCollections(): array
     {
-        $element = $this->inspectorType === null ? null : $this->plugin()->elements($this->documentType)->get($this->inspectorType);
-        $collections = $element instanceof HasElementMedia ? ElementRegistry::mediaCollectionMetadata($element) : ($element === null ? ['image' => [
+        $element = $this->inspectorType === null ? null : CanvasElements::resolve($this->plugin()->elements($this->documentType), $this->inspectorType);
+        $collections = $element instanceof HasElementMedia ? CanvasElements::mediaCollectionMetadata($element) : ($element === null ? ['image' => [
             'label' => __('filament-canvas::canvas.image'), 'accepted_mime_types' => ['image/png', 'image/jpeg', 'image/webp'],
             'max_files' => 1, 'max_size' => 10240, 'reference_field' => 'image_id',
         ]] : []);
@@ -457,13 +457,13 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $library = new MediaLibrary($context);
         $elements = $this->plugin()->elements($this->documentType);
         if ($collection !== null && $this->inspectorType !== null) {
-            $element = $elements->get($this->inspectorType);
+            $element = CanvasElements::resolve($elements, $this->inspectorType);
 
             return $this->inspectorAssetCache[$key] = $element instanceof HasElementMedia ? $library->assets($element, $collection) : [];
         }
         $assets = [];
-        foreach ($elements->types() as $type) {
-            $element = $elements->get($type);
+        foreach (CanvasElements::types($elements) as $type) {
+            $element = CanvasElements::resolve($elements, $type);
             if ($element instanceof HasElementMedia) {
                 foreach ($library->assets($element) as $asset) {
                     $assets[$asset['id']] = $asset;
@@ -483,8 +483,8 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             throw ValidationException::withMessages(['imageUploadData.file' => __('filament-canvas::canvas.missing_collection')]);
         }
         $element = $this->inspectorType !== null
-            ? $this->plugin()->elements($this->documentType)->get($this->inspectorType)
-            : $this->plugin()->elements($this->documentType)->get('asset');
+            ? CanvasElements::resolve($this->plugin()->elements($this->documentType), $this->inspectorType)
+            : CanvasElements::resolve($this->plugin()->elements($this->documentType), 'asset');
         $library = new MediaLibrary($context);
         $state = $this->imageUploadForm->getState();
         $files = Arr::wrap(data_get($state, $policy['upload_field']));
@@ -576,10 +576,10 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
 
     private function normalizeBlocks(array $blocks): array
     {
-        $registry = $this->plugin()->elements($this->documentType);
+        $definitions = $this->plugin()->elements($this->documentType);
         foreach ($blocks as &$block) {
-            if (is_array($block) && is_array($block['data']['properties'] ?? null) && in_array($block['type'] ?? null, $registry->types(), true)) {
-                $block['data']['properties'] = ElementData::normalize($registry->get($block['type']), $block['data']['properties']);
+            if (is_array($block) && is_array($block['data']['properties'] ?? null) && in_array($block['type'] ?? null, CanvasElements::types($definitions), true)) {
+                $block['data']['properties'] = ElementData::normalize(CanvasElements::resolve($definitions, $block['type']), $block['data']['properties']);
             }
         }
         unset($block);
@@ -635,8 +635,8 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $assets = $this->inspectorAssets();
         $canUpload = $context->document instanceof HasMedia;
         $elements = $plugin->elements($this->documentType);
-        foreach ($this->inspectorType === null ? $elements->types() : [$this->inspectorType] as $type) {
-            $element = $elements->get($type);
+        foreach ($this->inspectorType === null ? CanvasElements::types($elements) : [$this->inspectorType] as $type) {
+            $element = CanvasElements::resolve($elements, $type);
             if ($element instanceof HasElementMedia && collect($element->mediaCollections())->contains(fn ($collection) => isset($collection['upload_owner']))) {
                 $canUpload = true;
             }
@@ -650,11 +650,11 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             'width' => $document->width,
             'height' => $document->height,
             'previewHtml' => $plugin->resolvePreviewRenderer($this->documentType)->render($document, $context),
-            'elementLabels' => $elements->labels(),
-            'elementGroups' => $elements->toolbarGroups(),
-            'elementIcons' => $elements->icons(),
-            'elementTemplates' => $elements->templates(),
-            'elementTypes' => $elements->metadataForEditor(),
+            'elementLabels' => CanvasElements::labels($elements),
+            'elementGroups' => CanvasElements::toolbarGroups($elements),
+            'elementIcons' => CanvasElements::icons($elements),
+            'elementTemplates' => CanvasElements::templates($elements),
+            'elementTypes' => CanvasElements::metadataForEditor($elements),
         ]);
     }
 }

@@ -7,7 +7,7 @@ use EduardoRibeiroDev\FilamentCanvas\Contracts\DocumentStore;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Data\SaveResult;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
@@ -15,9 +15,9 @@ use InvalidArgumentException;
 class EloquentDocumentStore implements DocumentStore
 {
     /** @param class-string<Model&CanvasOwner> $ownerModel */
-    public function __construct(private string $ownerModel, private ?ElementRegistry $elements = null) {}
+    public function __construct(private string $ownerModel, private ?array $elements = null) {}
 
-    public function withElements(ElementRegistry $elements): static
+    public function withElements(array $elements): static
     {
         $store = clone $this;
         $store->elements = $elements;
@@ -28,7 +28,7 @@ class EloquentDocumentStore implements DocumentStore
     public function usingElements(callable $operation): mixed
     {
         return $this->elements === null ? $operation()
-            : ElementRegistry::using($this->ownerModel, $this->elements, $operation);
+            : CanvasElements::using($this->ownerModel, $this->elements, $operation);
     }
 
     public function owner(EditorContext $context): Model&CanvasOwner

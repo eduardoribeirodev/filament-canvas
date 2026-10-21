@@ -5,8 +5,8 @@ namespace EduardoRibeiroDev\FilamentCanvas\Rendering;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\ElementType;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\HasElementMedia;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
 
 /** Prepare display values at the editor/export boundary, before calling an element's view. */
@@ -22,7 +22,7 @@ class ElementViewData
 
         $data = array_replace($properties, [
             'type' => $element->type(),
-            'element_kind' => ElementRegistry::kind($element),
+            'element_kind' => CanvasElements::kind($element),
             'geometry' => [
                 'x' => (float) ($block['data']['x_pt'] ?? 0),
                 'y' => (float) ($block['data']['y_pt'] ?? 0),

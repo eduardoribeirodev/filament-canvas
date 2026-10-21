@@ -128,10 +128,10 @@ class MediaLibrary
         return $result;
     }
 
-    public function validateReferences(array $blocks, ElementRegistry $elements): void
+    public function validateReferences(array $blocks, array $elements): void
     {
         foreach ($blocks as $index => $block) {
-            $element = $elements->get($block['type']);
+            $element = CanvasElements::resolve($elements, $block['type']);
             if (! $element instanceof HasElementMedia) {
                 continue;
             }

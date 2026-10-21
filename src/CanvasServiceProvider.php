@@ -4,7 +4,6 @@ namespace EduardoRibeiroDev\FilamentCanvas;
 
 use EduardoRibeiroDev\FilamentCanvas\Console\Commands\MakeCanvasElementCommand;
 use EduardoRibeiroDev\FilamentCanvas\Livewire\CanvasEditor;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use Filament\Support\Assets\AlpineComponent;
 use Filament\Support\Assets\Css;
 use Filament\Support\Facades\FilamentAsset;
@@ -16,7 +15,6 @@ class CanvasServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/filament-canvas.php', 'filament-canvas');
-        $this->app->singleton(ElementRegistry::class, fn () => ElementRegistry::configured());
     }
 
     public function boot(): void

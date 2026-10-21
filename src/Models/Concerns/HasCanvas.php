@@ -3,6 +3,7 @@
 namespace EduardoRibeiroDev\FilamentCanvas\Models\Concerns;
 
 use EduardoRibeiroDev\FilamentCanvas\CanvasPlugin;
+use EduardoRibeiroDev\FilamentCanvas\Contracts\ElementType;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
 use EduardoRibeiroDev\FilamentCanvas\Data\DocumentReference;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
@@ -10,8 +11,8 @@ use EduardoRibeiroDev\FilamentCanvas\Data\SaveResult;
 use EduardoRibeiroDev\FilamentCanvas\Models\CanvasElement;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\ElementPersistence;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\CanvasRenderer;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -49,15 +50,15 @@ trait HasCanvas
         $user = $this->canvasUser($user);
         Gate::forUser($user)->authorize('update', $this);
 
-        $elements = ElementRegistry::forOwner($this);
+        $elements = CanvasElements::forOwner($this);
         foreach ($blocks as &$block) {
             if (
                 is_array($block)
-                && in_array($block['type'] ?? null, $elements->types(), true)
+                && in_array($block['type'] ?? null, CanvasElements::types($elements), true)
                 && is_array($block['data']['properties'] ?? null)
             ) {
                 $block['data']['properties'] = ElementData::normalize(
-                    $elements->get($block['type']),
+                    CanvasElements::resolve($elements, $block['type']),
                     $block['data']['properties'],
                 );
             }
@@ -134,11 +135,16 @@ trait HasCanvas
         return [(float) config('filament-canvas.width', 595.28), (float) config('filament-canvas.height', 841.89)];
     }
 
-    public function canvasElementRegistry(): ElementRegistry
+    public function availableCanvasElements(): array
     {
         $elements = $this->canvasElementsAvailable();
 
-        return $elements === null ? ElementRegistry::configured() : ElementRegistry::from($elements);
+        return $elements === null ? CanvasElements::configured() : CanvasElements::list($elements);
+    }
+
+    public function resolveCanvasElement(string $type): ElementType
+    {
+        return CanvasElements::resolve(CanvasElements::forOwner($this), $type);
     }
 
     public function assertCanvasEditable(): void {}

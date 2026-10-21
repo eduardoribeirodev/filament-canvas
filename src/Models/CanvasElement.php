@@ -5,8 +5,8 @@ namespace EduardoRibeiroDev\FilamentCanvas\Models;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\HasElementMedia;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
+use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementData;
-use EduardoRibeiroDev\FilamentCanvas\Support\ElementRegistry;
 use EduardoRibeiroDev\FilamentCanvas\Support\ElementValidation;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaFiles;
 use EduardoRibeiroDev\FilamentCanvas\Support\MediaLibrary;
@@ -70,7 +70,7 @@ class CanvasElement extends Model implements HasMedia
     public function canvasData(): array
     {
         $data = $this->only(['id', 'name', 'x_pt', 'y_pt', 'width_pt', 'height_pt', 'rotation_deg', 'visible', 'properties']);
-        $definition = ElementRegistry::forOwner($this->canvasOwner())->get($this->type);
+        $definition = CanvasElements::resolve(CanvasElements::forOwner($this->canvasOwner()), $this->type);
         if ($definition instanceof HasElementMedia) {
             foreach ($definition->mediaCollections() as $name => $collection) {
                 $multiple = ($collection['max_files'] ?? 1) > 1;
@@ -87,7 +87,7 @@ class CanvasElement extends Model implements HasMedia
 
     public function mergeCanvasData(array $incoming): array
     {
-        $definition = ElementRegistry::forOwner($this->canvasOwner())->get($this->type);
+        $definition = CanvasElements::resolve(CanvasElements::forOwner($this->canvasOwner()), $this->type);
 
         return ElementData::normalize($definition, $incoming);
     }
@@ -95,7 +95,7 @@ class CanvasElement extends Model implements HasMedia
     /** Optional domain subclasses can persist their own relations in the same transaction. */
     public function syncCanvasData(array $data, ?EditorContext $context = null): void
     {
-        $definition = ElementRegistry::forOwner($this->canvasOwner())->get($this->type);
+        $definition = CanvasElements::resolve(CanvasElements::forOwner($this->canvasOwner()), $this->type);
         if (! $definition instanceof HasElementMedia) {
             return;
         }
@@ -140,7 +140,7 @@ class CanvasElement extends Model implements HasMedia
 
     public function registerMediaCollections(): void
     {
-        $definition = ElementRegistry::forOwner($this->canvasOwner())->get($this->type);
+        $definition = CanvasElements::resolve(CanvasElements::forOwner($this->canvasOwner()), $this->type);
         if (! $definition instanceof HasElementMedia) {
             return;
         }
@@ -161,7 +161,7 @@ class CanvasElement extends Model implements HasMedia
 
     protected function validateConfigurations(): void
     {
-        $definition = ElementRegistry::forOwner($this->canvasOwner())->get($this->type);
+        $definition = CanvasElements::resolve(CanvasElements::forOwner($this->canvasOwner()), $this->type);
         $this->properties = ElementData::normalize($definition, $this->properties);
         ElementValidation::validate($definition, $this->properties);
     }
@@ -176,7 +176,7 @@ class CanvasElement extends Model implements HasMedia
             }
             [$width, $height] = $owner->canvasSize();
             Validator::make($element->only(['name', 'type', 'x_pt', 'y_pt', 'width_pt', 'height_pt', 'rotation_deg']), [
-                'name' => ['present', 'string', 'max:255'], 'type' => ['required', Rule::in(ElementRegistry::forOwner($owner)->types())],
+                'name' => ['present', 'string', 'max:255'], 'type' => ['required', Rule::in(CanvasElements::types(CanvasElements::forOwner($owner)))],
                 'x_pt' => ['required', 'numeric', 'min:0'], 'y_pt' => ['required', 'numeric', 'min:0'],
                 'width_pt' => ['required', 'numeric', 'gt:0'], 'height_pt' => ['required', 'numeric', 'gt:0'],
                 'rotation_deg' => ['nullable', 'numeric', 'between:-360,360'],
