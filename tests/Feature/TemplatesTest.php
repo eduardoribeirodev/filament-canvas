@@ -46,7 +46,7 @@ class TemplatesTest extends TestCase
             $table->id();
             $table->timestamps();
         });
-        (require dirname(__DIR__, 2).'/database/migrations/2026_10_10_020000_create_canvas_elements_table.php')->up();
+        $this->createCanvasElementsTable();
         $this->createMediaTable();
         auth()->setUser((new User())->forceFill(['id' => 1, 'name' => 'Editor']));
         Gate::before(fn() => $this->templatesAllowAccess);

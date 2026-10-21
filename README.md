@@ -50,7 +50,7 @@ public function panel(Panel $panel): Panel
 }
 ```
 
-The service provider and Artisan command are discovered automatically. The package creates the `canvas_elements` table; your application supplies the document model and its table.
+The service provider and Artisan command are discovered automatically. Your application supplies the document model and its table, and is responsible for creating the `canvas_elements` table when using the Eloquent document store.
 
 ## Configuration
 
@@ -230,8 +230,6 @@ These classes live in `EduardoRibeiroDev\FilamentCanvas\Elements` and are availa
 Select **Drawing**, then click the canvas to add points. Click the first point to close the figure, or press **Enter** to finish an open path. **Esc** cancels. Double-click an existing drawing to edit its points; drag a point to move it, then press **Enter** to finish or **Esc** to discard the edits. The attributes panel also exposes the ordered points, closed/open state, stroke and fill.
 
 Points are saved as `drawing.points`, an array of `{x, y}` percentages relative to the element frame. The shared SVG view scales with the element and renders in standalone HTML/PDF. Line and shape styling remains under the same `drawing` property.
-
-The package migration `2026_10_20_000000_convert_canvas_drawings_to_lines` changes existing line-based `drawing` records to `line`, preserving their IDs, properties, position and rotation. Run `php artisan migrate` when updating the package. Its rollback restores only converted records; new lines are preserved.
 
 ### Creating Custom Elements
 

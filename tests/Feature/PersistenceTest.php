@@ -37,7 +37,7 @@ class PersistenceTest extends TestCase
             $table->boolean('locked')->default(false);
             $table->timestamps();
         });
-        (require dirname(__DIR__, 2).'/database/migrations/2026_10_10_020000_create_canvas_elements_table.php')->up();
+        $this->createCanvasElementsTable();
         $this->createMediaTable();
         Storage::fake('public');
         Gate::before(fn ($user, $ability) => $ability === 'view' || $this->persistenceAllowUpdate);

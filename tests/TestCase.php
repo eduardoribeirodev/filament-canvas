@@ -60,6 +60,25 @@ abstract class TestCase extends PackageTestCase
         ]);
     }
 
+    protected function createCanvasElementsTable(): void
+    {
+        Schema::create('canvas_elements', function (Blueprint $table): void {
+            $table->id();
+            $table->morphs('elementable');
+            $table->string('name');
+            $table->string('type');
+            foreach (['x_pt', 'y_pt', 'width_pt', 'height_pt'] as $field) {
+                $table->decimal($field, 10, 4);
+            }
+            $table->decimal('rotation_deg', 7, 3)->default(0);
+            $table->integer('layer')->default(0);
+            $table->boolean('visible')->default(true);
+            $table->json('properties')->nullable();
+            $table->timestamps();
+            $table->index(['elementable_type', 'elementable_id', 'layer'], 'canvas_elements_owner_order_index');
+        });
+    }
+
     protected function createMediaTable(): void
     {
         Schema::create('media', function (Blueprint $table): void {
@@ -93,7 +112,7 @@ abstract class TestCase extends PackageTestCase
             $table->id();
             $table->timestamps();
         });
-        (require dirname(__DIR__).'/database/migrations/2026_10_10_020000_create_canvas_elements_table.php')->up();
+        $this->createCanvasElementsTable();
         $this->createMediaTable();
         Storage::fake('public');
         auth()->setUser((new User)->forceFill(['id' => 1, 'name' => 'Editor', 'email' => 'editor@example.test']));
