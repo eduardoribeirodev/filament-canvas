@@ -50,7 +50,7 @@ public function panel(Panel $panel): Panel
 }
 ```
 
-The service provider and Artisan command are discovered automatically. Your application supplies the document model and its table, and is responsible for creating the `canvas_elements` table when using the Eloquent document store.
+The service provider and Artisan command are discovered automatically. The package creates the `canvas_elements` table; your application supplies the document model and its table.
 
 ## Configuration
 
