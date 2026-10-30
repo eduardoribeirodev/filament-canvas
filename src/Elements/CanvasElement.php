@@ -8,8 +8,13 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 
-abstract class CanvasElement implements ElementType, HasElementMedia
+abstract class CanvasElement implements ElementType, HasElementMedia, \EduardoRibeiroDev\FilamentCanvas\Contracts\HasViewData
 {
+    public function viewData(array $data, \EduardoRibeiroDev\FilamentCanvas\Data\EditorContext $context): array
+    {
+        return $data;
+    }
+
     public function getIcon(): string|\BackedEnum|Htmlable|null
     {
         return Heroicon::OutlinedSquare3Stack3d;

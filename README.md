@@ -664,3 +664,37 @@ $icon = $element->getIcon();
 ```
 
 The resolver walks the allowed element list and compares `type()`. Groups only organize the toolbar. The editor, validation, persistence and PDF renderer use the same allowed list. Unknown types are rejected; arbitrary PHP class names are never instantiated from saved or submitted types. `Support\CanvasElements` contains shared list operations; there are no registry or presentation objects to configure or synchronize.
+
+
+### Per-element display data (0.3)
+
+Elements extending `CanvasElement` may override `viewData(array $data, EditorContext $context): array`.
+The package calls it once per visible block after preparing native properties, geometry and media.
+Return the complete data array, normally using `[...$data, 'products' => $products]`.
+The returned values are available as Alpine `data` in the existing element view.
+Custom implementations of `ElementType` may opt in with the `HasViewData` contract; existing implementations remain compatible.
+
+`$context->document` is the owner model, `$context->preview` distinguishes the editor from export,
+and `$context->data` contains the result of the owner's `canvasRenderData()` for this page.
+The context is immutable: `forDocument()` preserves the render metadata and `forRendering()` returns a new context.
+Avoid fetching external data or creating files in `normalize()`, which also runs during editing and validation.
+
+### Export multiple pages (0.3)
+
+```php
+use EduardoRibeiroDev\FilamentCanvas\Data\CanvasPage;
+
+$html = $renderer->renderPages([
+    new CanvasPage($firstDocument, $firstContext),
+    new CanvasPage($secondDocument, $secondContext),
+]);
+```
+
+Each page is rendered with the renderer's template and its own `$document`, `$context`, `$data`, `$blocks`,
+`$width` and `$height`. Templates output page markup such as `<section class="page">{!! $blocks !!}</section>`.
+The package wraps all page contents in one HTML document and includes its display runtime once.
+Use page-break CSS in the template. The first page sets the default print size; mixed sizes require explicit page CSS.
+Owner authorization remains enforced when a document store is configured, just as in `renderDocument()`.
+With a detached context, callers must authorize access before rendering, as with the existing detached renderer.
+Frozen publications can provide an in-memory owner implementing `CanvasRenderData` to avoid reading current records.
+No HTML extraction or document-view override is required. Empty page collections are rejected.

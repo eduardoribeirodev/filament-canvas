@@ -33,6 +33,8 @@ class ElementViewData
             'media' => $media,
         ]);
 
-        return $data;
+        return $element instanceof \EduardoRibeiroDev\FilamentCanvas\Contracts\HasViewData
+            ? $element->viewData($data, $context)
+            : $data;
     }
 }

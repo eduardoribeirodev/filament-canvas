@@ -55,27 +55,63 @@ class CanvasRenderer implements PreviewRenderer
 
     public function renderDocument(CanvasDocument $document, EditorContext $context, bool $preview = false): string
     {
-        $store = is_string($this->store) ? app($this->store) : $this->store;
-        $operation = function () use ($document, $context, $store, $preview): string {
-            $data = [];
-            $owner = $context->document;
-            if ($store instanceof EloquentDocumentStore) {
-                $store->authorize($context, 'preview');
-                $owner = $store->owner($context);
-                $context = $context->forDocument($owner);
+        return $this->usingStore(function () use ($document, $context, $preview): string {
+            $variables = $this->pageVariables($document, $context, $preview);
+
+            return self::renderTemplate($this->template, $variables['data'], $preview, $variables);
+        });
+    }
+
+    /** @param iterable<\EduardoRibeiroDev\FilamentCanvas\Data\CanvasPage> $pages */
+    public function renderPages(iterable $pages, array $data = [], array $variables = []): string
+    {
+        return $this->usingStore(function () use ($pages, $data, $variables): string {
+            $contents = [];
+            $first = null;
+            foreach ($pages as $page) {
+                if (! $page instanceof \EduardoRibeiroDev\FilamentCanvas\Data\CanvasPage) {
+                    throw new \InvalidArgumentException('Pages must be CanvasPage instances.');
+                }
+                $first ??= $page->document;
+                $values = $this->pageVariables($page->document, $page->context, false);
+                $contents[] = view($this->template, $values)->render();
             }
-            if ($owner instanceof CanvasRenderData) {
-                (new MediaLibrary($context))->validateReferences($document->blocks, $this->elements);
-                $data = $owner->canvasRenderData($document, $context);
+            if ($first === null) {
+                throw new \InvalidArgumentException('At least one canvas page is required.');
             }
 
-            return self::renderTemplate($this->template, $data, $preview, [
-                'document' => $document, 'context' => $context,
-                'blocks' => $this->renderBlocks($document, $context),
-            ]);
-        };
+            return self::renderTemplate('filament-canvas::templates.pages', $data, false,
+                array_replace($variables, ['document' => $first, 'pageContents' => $contents]));
+        });
+    }
+
+    private function usingStore(\Closure $operation): string
+    {
+        $store = is_string($this->store) ? app($this->store) : $this->store;
 
         return $store instanceof EloquentDocumentStore ? $store->usingElements($operation) : $operation();
+    }
+
+    private function pageVariables(CanvasDocument $document, EditorContext $context, bool $preview): array
+    {
+        $store = is_string($this->store) ? app($this->store) : $this->store;
+        $owner = $context->document;
+        if ($store instanceof EloquentDocumentStore) {
+            $store->authorize($context, 'preview');
+            $owner = $store->owner($context);
+            $context = $context->forDocument($owner);
+        }
+        $context = $context->forRendering($preview, []);
+        $data = [];
+        if ($owner instanceof CanvasRenderData) {
+            (new MediaLibrary($context))->validateReferences($document->blocks, $this->elements);
+            $data = $owner->canvasRenderData($document, $context);
+        }
+        $context = $context->forRendering($preview, $data);
+
+        return ['document' => $document, 'context' => $context, 'data' => $data, 'preview' => $preview,
+            'width' => $document->width, 'height' => $document->height,
+            'blocks' => $this->renderBlocks($document, $context)];
     }
 
     public function renderOutput(array $data, array $variables = []): string

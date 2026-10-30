@@ -69,7 +69,8 @@ class ElementTypesTest extends TestCase
         $this->assertEqualsCanonicalizing(['type', 'getLabel', 'getIcon', 'form', 'view'], $methods);
         $element = new TextElement;
         $this->assertStringContainsString('x-html="data.html"', ElementMarkup::template($element));
-        foreach (['capabilities', 'render', 'editorTemplate', 'compileEditorTemplate', 'resolveMedia', 'viewData', 'validationRules', 'typographyRules'] as $method) {
+        $this->assertInstanceOf(\EduardoRibeiroDev\FilamentCanvas\Contracts\HasViewData::class, $element);
+        foreach (['capabilities', 'render', 'editorTemplate', 'compileEditorTemplate', 'resolveMedia', 'validationRules', 'typographyRules'] as $method) {
             $this->assertFalse(method_exists($element, $method), $method.' belongs outside the element API.');
         }
     }
