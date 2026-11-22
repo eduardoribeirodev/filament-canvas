@@ -9,6 +9,7 @@
     @canvas-inspector-ready.stop="syncInspector()"
     @canvas-asset-selected.stop="selectAsset($event.detail.id,$event.detail.key,$event.detail.collection)"
     @canvas-reference-selected.stop="selectReference($event.detail.id,$event.detail.key)"
+    @filament-canvas-add-element.window="addFromEvent($event)"
 >
     <style>
         {!! \EduardoRibeiroDev\FilamentCanvas\Support\RichText::styles() !!}
@@ -28,7 +29,7 @@
                 <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-left" label="{{ __('filament-canvas::canvas.undo') }}" title="{{ __('filament-canvas::canvas.undo') }}" @click="undo()" x-bind:disabled="saving || !undoStack.length" />
                 <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-right" label="{{ __('filament-canvas::canvas.redo') }}" title="{{ __('filament-canvas::canvas.redo') }}" @click="redo()" x-bind:disabled="saving || !redoStack.length" />
             </div>
-            <x-filament::button type="button" icon="heroicon-o-check" @click="save($wire)" x-bind:disabled="saving || !dirty" data-canvas-save>
+            <x-filament::button type="button" icon="heroicon-o-check" @click="save($wire)" x-bind:disabled="saving || adding || !dirty" data-canvas-save>
                 <span x-text="saving ? @js(__('filament-canvas::canvas.saving')) : @js(__('filament-canvas::canvas.save_composition'))"></span>
             </x-filament::button>
         </div>

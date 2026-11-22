@@ -189,6 +189,29 @@ public static function getPages(): array
 
 Link to it with `DocumentResource::getUrl('canvas', ['record' => $record])`. The page gets the model from its resource and uses that model's class name as the document type by default.
 
+#### Add elements from a header action
+
+Import `Filament\Actions\Action` and add this method to your `EditCanvas` subclass:
+
+```php
+protected function getHeaderActions(): array
+{
+    return [
+        Action::make('addCircle')
+            ->label('Add circle')
+            ->action(fn () => $this->addCanvasElement('ellipse', [
+                'name' => 'Circle',
+                'width_pt' => 96,
+                'height_pt' => 96,
+            ])),
+    ];
+}
+```
+
+Keep `EllipseElement` registered for the document. The circle appears in the open editor and participates in undo and redo. **Save composition** persists it together with other pending edits.
+
+`addCanvasElement()` accepts any registered element type. The optional data can override its name, position, size, rotation, visibility and individual top-level entries in `properties`. If you use a custom editor view, include the `filament-canvas-add-element` Alpine listener from the default view.
+
 ### Embedded Editor
 
 Use the `Canvas` schema component to place the editor inside an existing resource page or schema:

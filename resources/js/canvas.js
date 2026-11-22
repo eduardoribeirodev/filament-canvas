@@ -819,11 +819,11 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         this.previewAnchor.after(...visible);
     },
         async save(wire) {
-        if(this.saving||this.imageUploading)return;
+        if(this.saving||this.imageUploading||this.adding)return;
         if(this.drawingSession && !this.finishDrawing())return;
         if(this.textEditing)this.commitTextEditing();
         await this.flushInspector();
-        if(this.inspectorInvalid)return;
+        if(this.inspectorInvalid||this.saving||this.adding)return;
         this.saving=true;this.error='';this.endGesture();
         try{
             const keys=this.blocks.map(b=>b._key),payload=JSON.parse(this.snapshot());
@@ -846,11 +846,20 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 if (b.type === 'line') b.data.properties.drawing = {...this.drawingDefaults(), ...(b.data.properties.drawing || {})};
             }
         },
-        add(type) {
-            if(this.drawingSession && !this.finishDrawing())this.cancelDrawing();
+        addFromEvent(event) {
+            const {documentType, documentId, type, data} = event.detail ?? {};
+            if (!event.target?.contains?.(this.$el) || documentType !== this.$wire?.documentType || documentId !== this.$wire?.documentId) return;
+            if (!Object.hasOwn(options.labels ?? {}, type)) return;
+
+            return this.add(type, data);
+        },
+        add(type, overrides = {}) {
             if(this.saving || this.adding || !Object.hasOwn(this.labels,type))return null;
             const insert=initialized=>{
                 if(this.destroyed)return null;
+                if(this.drawingSession && !this.finishDrawing())this.cancelDrawing();
+                if(this.textEditing)this.commitTextEditing();
+                this.endGesture();
                 const before={snapshot:this.snapshot(),undoDepth:this.undoStack.length,dirty:this.dirty,redo:[...this.redoStack]};
                 this.checkpoint();
                 const data={
@@ -858,6 +867,10 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                     width_pt:Math.min(200,this.pageWidth),height_pt:Math.min((this.elementTypes[type]?.kind==='line' || type==='line')?12:100,this.pageHeight),
                     rotation_deg:0,visible:true,image_id:null,references:[],properties:{},...initialized?.data,
                 };
+                for (const field of ['name', 'x_pt', 'y_pt', 'width_pt', 'height_pt', 'rotation_deg', 'visible']) {
+                    if (Object.hasOwn(overrides ?? {}, field)) data[field] = overrides[field];
+                }
+                data.properties = {...data.properties, ...overrides?.properties};
                 const block={_key:this.nextKey++,type,data};
                 this.blocks.push(block);this.selected=this.blocks.length-1;
                 this.normalize(block);this.prepare();

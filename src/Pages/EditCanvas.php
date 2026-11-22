@@ -79,4 +79,15 @@ abstract class EditCanvas extends Page
         return $schema->components([Canvas::make()->document(static::getCanvasDocumentType(), fn () => $this->documentId)
             ->options(static::getCanvasOptions())->columnSpanFull()]);
     }
+
+    protected function addCanvasElement(string $type, array $data = []): void
+    {
+        $this->dispatch(
+            'filament-canvas-add-element',
+            documentType: static::getCanvasDocumentType(),
+            documentId: $this->documentId,
+            type: $type,
+            data: $data,
+        );
+    }
 }

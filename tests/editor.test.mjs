@@ -8,6 +8,41 @@ import { default as createCanvas, renderRichDocument, plainRichDocument } from '
         return createCanvas([], [], 841.89, 595.28, '', options);
     }
 
+    test('a parent action adds a circle to its open draft with normal defaults and undo', async () => {
+        const canvas = editor({labels: {ellipse: 'Ellipse'}});
+        canvas.$el = {};
+        canvas.$wire = {
+            documentType: 'document',
+            documentId: '42',
+            createElement: async type => ({type, data: {properties: {drawing: {stroke: '#112233'}}}}),
+        };
+        await canvas.add('text');
+        const existing = canvas.blocks[0];
+        existing.data.name = 'Unsaved edit';
+        const event = {
+            target: {contains: element => element === canvas.$el},
+            detail: {documentType: 'document', documentId: '42', type: 'ellipse', data: {
+                name: 'Circle', width_pt: 96, height_pt: 96,
+            }},
+        };
+
+        await canvas.addFromEvent({...event, detail: {...event.detail, documentId: '43'}});
+        await canvas.addFromEvent({...event, target: {contains: () => false}});
+        assert.equal(canvas.blocks.length, 1);
+
+        await canvas.addFromEvent(event);
+        assert.equal(canvas.blocks[0].data.name, 'Unsaved edit');
+        assert.equal(canvas.current.data.name, 'Circle');
+        assert.equal(canvas.current.data.width_pt, 96);
+        assert.equal(canvas.current.data.height_pt, 96);
+        assert.equal(canvas.current.data.properties.drawing.stroke, '#112233');
+        assert.equal(canvas.dirty, true);
+
+        canvas.undo();
+        assert.equal(canvas.blocks.length, 1);
+        assert.equal(canvas.blocks[0].data.name, 'Unsaved edit');
+    });
+
     test('generic tables render their own data and escape headings and cell content', () => {
         const canvas = editor();
         canvas.add('data-table');

@@ -1,4 +1,4 @@
-//#region resources/js/drawing.js
+// resources/js/drawing.js
 /** Interactive point editing; coordinates are percentages of the element's local frame. */
 var drawingTools = {
 	drawingSession: null,
@@ -150,8 +150,7 @@ var drawingTools = {
 		this.syncInspector();
 	}
 };
-//#endregion
-//#region resources/js/snapping.js
+// resources/js/snapping.js
 /** Geometry in document units; tolerance is measured in screen pixels. */
 function elementBounds(data) {
 	const width = Number(data.width_pt), height = Number(data.height_pt), angle = Number(data.rotation_deg || 0) * Math.PI / 180;
@@ -267,8 +266,7 @@ function alignResize(data, original, corner, modifiers, blocks, key, width, heig
 		guides
 	};
 }
-//#endregion
-//#region resources/js/canvas.js
+// resources/js/canvas.js
 var escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
 	"&": "&amp;",
 	"<": "&lt;",
@@ -1882,11 +1880,11 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.previewAnchor.after(...visible);
 		},
 		async save(wire) {
-			if (this.saving || this.imageUploading) return;
+			if (this.saving || this.imageUploading || this.adding) return;
 			if (this.drawingSession && !this.finishDrawing()) return;
 			if (this.textEditing) this.commitTextEditing();
 			await this.flushInspector();
-			if (this.inspectorInvalid) return;
+			if (this.inspectorInvalid || this.saving || this.adding) return;
 			this.saving = true;
 			this.error = "";
 			this.endGesture();
@@ -1924,11 +1922,19 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				};
 			}
 		},
-		add(type) {
-			if (this.drawingSession && !this.finishDrawing()) this.cancelDrawing();
+		addFromEvent(event) {
+			const { documentType, documentId, type, data } = event.detail ?? {};
+			if (!event.target?.contains?.(this.$el) || documentType !== this.$wire?.documentType || documentId !== this.$wire?.documentId) return;
+			if (!Object.hasOwn(options.labels ?? {}, type)) return;
+			return this.add(type, data);
+		},
+		add(type, overrides = {}) {
 			if (this.saving || this.adding || !Object.hasOwn(this.labels, type)) return null;
 			const insert = (initialized) => {
 				if (this.destroyed) return null;
+				if (this.drawingSession && !this.finishDrawing()) this.cancelDrawing();
+				if (this.textEditing) this.commitTextEditing();
+				this.endGesture();
 				const before = {
 					snapshot: this.snapshot(),
 					undoDepth: this.undoStack.length,
@@ -1948,6 +1954,19 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 					references: [],
 					properties: {},
 					...initialized?.data
+				};
+				for (const field of [
+					"name",
+					"x_pt",
+					"y_pt",
+					"width_pt",
+					"height_pt",
+					"rotation_deg",
+					"visible"
+				]) if (Object.hasOwn(overrides ?? {}, field)) data[field] = overrides[field];
+				data.properties = {
+					...data.properties,
+					...overrides?.properties
 				};
 				const block = {
 					_key: this.nextKey++,
@@ -2084,5 +2103,4 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 		}
 	};
 }
-//#endregion
 export { createCanvas as default, plainRichDocument, renderRichDocument, sanitizeRichHtml };
