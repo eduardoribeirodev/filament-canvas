@@ -487,6 +487,19 @@ You can override `view()` or extend `form()` to add fields. Extending `CanvasEle
 
 ## Advanced Features
 
+### Canvas Background
+
+Set `background_color` in [config/filament-canvas.php](config/filament-canvas.php) to a hexadecimal CSS color for the built-in canvas template. To override it per document, return a `background_color` value from the model's `canvasMetadata()` method or pass it in the `CanvasDocument` metadata when using a custom store.
+
+```php
+public function canvasMetadata(): array
+{
+    return ['background_color' => $this->background_color];
+}
+```
+
+The editor, preview and standalone output use the resolved color. If you use a custom page template, you can include the built-in template or call `Html::canvasBackground($document->metadata ?? [])` when styling the page.
+
 ### Text Fonts
 
 Set `fonts` in `config/filament-canvas.php` to a non-empty map of CSS font stacks to labels. The first entry is assigned explicitly to new text and title blocks and to existing blocks whose font is missing or has been removed from the list.

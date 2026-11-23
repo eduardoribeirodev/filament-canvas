@@ -6,6 +6,7 @@ use EduardoRibeiroDev\FilamentCanvas\CanvasPlugin;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasOwner;
 use EduardoRibeiroDev\FilamentCanvas\Contracts\CanvasRenderData;
 use EduardoRibeiroDev\FilamentCanvas\Data\CanvasDocument;
+use EduardoRibeiroDev\FilamentCanvas\Data\CanvasPage;
 use EduardoRibeiroDev\FilamentCanvas\Data\DocumentReference;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
@@ -77,6 +78,23 @@ class TemplatesTest extends TestCase
         $this->assertSame('Text salvo', $this->templatesOwner->canvasElements()->first()->properties['text']);
         Livewire::test(CanvasEditor::class, CanvasTemplatePage::editorParameters($this->templatesOwner->id))->assertOk()->call('preview', [$this->templatesBlock()])->assertHasNoErrors();
         $this->assertSame('filament-canvas::templates.blank', $plugin->getTemplate());
+    }
+    public function test_configured_background_appears_on_the_canvas_and_each_exported_page_can_override_it(): void
+    {
+        config(['filament-canvas.background_color' => '#ede7dc']);
+        $plugin = CanvasPlugin::make();
+        $this->templatesPanel($plugin);
+        $editor = Livewire::test(CanvasEditor::class, CanvasTemplatePage::editorParameters($this->templatesOwner->id));
+        $this->assertStringContainsString('style="background:#ede7dc"', $editor->html());
+        $this->assertStringContainsString('<section class="page" style="background:#ede7dc">', $editor->instance()->render()->getData()['previewHtml']);
+
+        $renderer = $plugin->resolveRenderer(CanvasTemplateDocument::class);
+        $context = new EditorContext(new DocumentReference(CanvasTemplateDocument::class, $this->templatesOwner->id), auth()->user(), document: $this->templatesOwner);
+        $first = new CanvasDocument([], 300, 200, metadata: ['background_color' => '#abc']);
+        $second = new CanvasDocument([], 300, 200, metadata: ['background_color' => '#fff;color:red']);
+        $html = $renderer->renderPages([new CanvasPage($first, $context), new CanvasPage($second, $context)]);
+        $this->assertStringContainsString('<section class="page" style="background:#abc">', $html);
+        $this->assertStringContainsString('<section class="page" style="background:#ede7dc">', $html);
     }
     public function test_page_template_and_element_list_override_panel_defaults_without_changing_another_page(): void
     {

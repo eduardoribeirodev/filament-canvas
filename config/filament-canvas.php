@@ -12,6 +12,7 @@ return [
     'font_stylesheet' => null,
     'width' => 1920,
     'height' => 1080,
+    'background_color' => '#fff',
     'min_zoom' => 0.25,
     'max_zoom' => 3,
     'media_disk' => env('FILESYSTEM_DISK', 'public'),

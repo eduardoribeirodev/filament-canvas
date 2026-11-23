@@ -14,6 +14,11 @@ final class Html
         return is_string($value) && preg_match('/^#(?:[a-f0-9]{3}|[a-f0-9]{6}|[a-f0-9]{8})$/iD', $value) ? $value : $fallback;
     }
 
+    public static function canvasBackground(array $metadata): string
+    {
+        return self::color($metadata['background_color'] ?? null, self::color(config('filament-canvas.background_color'), '#fff'));
+    }
+
     public static function linkUrl(mixed $value): string
     {
         if (! is_string($value) || ! filter_var($value, FILTER_VALIDATE_URL) || ! in_array(strtolower(parse_url($value, PHP_URL_SCHEME) ?? ''), ['http', 'https'], true)) {
