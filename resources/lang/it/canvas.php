@@ -88,6 +88,7 @@ return [
     'fit_screen' => 'Adatta allo schermo',
     'details_layers' => 'Dettagli e livelli',
     'editor_panel' => 'Pannello dell’editor',
+    'read_only' => 'Sola lettura',
     'properties' => 'Proprietà',
     'layers' => 'Livelli',
     'layer_help' => 'Da davanti a dietro. Trascina la maniglia per riordinare.',

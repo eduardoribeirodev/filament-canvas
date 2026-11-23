@@ -130,7 +130,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         this.$nextTick(() => { if(this.destroyed)return; if(options.fitViewport)this.observeEditorViewport();else this.fit(); this.$refs.preview.srcdoc = this.previewHtml; });
         this.disposeWatch = this.$watch('blocks', () => { this.schedulePreview(); this.syncInspector(); });
         this.disposeSelectionWatch = this.$watch('selected', () => { if(this.textEditing && this.current?._key !== this.textEditing.key)this.commitTextEditing();this.syncInspector(); });
-        if(this.$wire && this.$watch)this.disposeInspectorWatch=this.$watch('$wire.inspectorData', values=>this.queueInspectorChanges(values));
+        if(!options.readOnly && this.$wire && this.$watch)this.disposeInspectorWatch=this.$watch('$wire.inspectorData', values=>this.queueInspectorChanges(values));
         this.syncInspector();
     },
         schedulePreview() {
@@ -249,6 +249,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         get imageTypes() { return Object.keys(this.elementTypes).filter(type=>this.elementTypes[type].kind==='image'); },
         isText(block) { return this.elementTypes[block?.type]?.kind==='text'; },
         syncInspector() {
+            if (options.readOnly) return;
             if(this.drawingSession?.creating)return;
             if(this.destroyed)return;
             this.syncRichEditor();
@@ -646,6 +647,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         return {x_pt:Number(d.x_pt)+(sx*dw*Math.cos(a)-sy*dh*Math.sin(a)-dw)/2,y_pt:Number(d.y_pt)+(sx*dw*Math.sin(a)+sy*dh*Math.cos(a)-dh)/2,width_pt:w,height_pt:h};
     },
         key(e) {
+        if (options.readOnly) return;
         if(this.drawingSession && ['Enter','Escape'].includes(e.key)){e.preventDefault();e.stopPropagation();e.key==='Escape'?this.cancelDrawing():this.finishDrawing();return;}
         if(this.textEditing){if(e.key==='Escape'){e.preventDefault?.();e.stopPropagation?.();this.cancelTextEditing();}return;}
         if(e.target?.closest?.('input,textarea,select,button,[role="slider"],[contenteditable="true"]')||this.saving)return;
@@ -774,7 +776,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
     },
         style(b,i) { const d=b.data;return {left:d.x_pt+'px',top:d.y_pt+'px',width:d.width_pt+'px',height:d.height_pt+'px',transform:`rotate(${-Number(d.rotation_deg)}deg)`,zIndex:i+1,opacity:d.visible===false?.25:1,color:d.properties?.color||'#222',cursor:this.drawingSession?.creating?'crosshair':'move',fontSize:(d.properties?.font_size||(b.type==='table'?8:12))+'px',textAlign:d.properties?.align||'center'}; },
         onPreviewLoad() {
-        if (this.destroyed || !this.$refs.preview?.srcdoc) return;
+        if (options.readOnly || this.destroyed || !this.$refs.preview?.srcdoc) return;
         const doc=this.$refs.preview.contentDocument,page=doc?.querySelector('.page');
         if (!page) return;
         this.syncPreviewFonts(doc);
@@ -846,7 +848,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
         this.previewAnchor.after(...visible);
     },
         async save(wire) {
-        if(this.saving||this.imageUploading||this.adding)return;
+        if(options.readOnly||this.saving||this.imageUploading||this.adding)return;
         if(this.drawingSession && !this.finishDrawing())return;
         if(this.textEditing)this.commitTextEditing();
         await this.flushInspector();
@@ -881,7 +883,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             return this.add(type, data);
         },
         add(type, overrides = {}) {
-            if(this.saving || this.adding || !Object.hasOwn(this.labels,type))return null;
+            if(options.readOnly || this.saving || this.adding || !Object.hasOwn(this.labels,type))return null;
             const insert=initialized=>{
                 if(this.destroyed)return null;
                 if(this.drawingSession && !this.finishDrawing())this.cancelDrawing();

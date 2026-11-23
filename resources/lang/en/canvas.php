@@ -88,6 +88,7 @@ return [
     'fit_screen' => 'Fit to screen',
     'details_layers' => 'Details and layers',
     'editor_panel' => 'Editor panel',
+    'read_only' => 'Read only',
     'properties' => 'Properties',
     'layers' => 'Layers',
     'layer_help' => 'Front to back. Drag the handle to reorder.',

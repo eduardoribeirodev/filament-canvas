@@ -55,8 +55,18 @@ class CanvasRenderer implements PreviewRenderer
 
     public function renderDocument(CanvasDocument $document, EditorContext $context, bool $preview = false): string
     {
-        return $this->usingStore(function () use ($document, $context, $preview): string {
-            $variables = $this->pageVariables($document, $context, $preview);
+        return $this->renderWithAbility($document, $context, $preview, 'preview');
+    }
+
+    public function renderSavedPreview(CanvasDocument $document, EditorContext $context): string
+    {
+        return $this->renderWithAbility($document, $context, true, 'view');
+    }
+
+    private function renderWithAbility(CanvasDocument $document, EditorContext $context, bool $preview, string $ability): string
+    {
+        return $this->usingStore(function () use ($document, $context, $preview, $ability): string {
+            $variables = $this->pageVariables($document, $context, $preview, $ability);
 
             return self::renderTemplate($this->template, $variables['data'], $preview, $variables);
         });
@@ -92,12 +102,12 @@ class CanvasRenderer implements PreviewRenderer
         return $store instanceof EloquentDocumentStore ? $store->usingElements($operation) : $operation();
     }
 
-    private function pageVariables(CanvasDocument $document, EditorContext $context, bool $preview): array
+    private function pageVariables(CanvasDocument $document, EditorContext $context, bool $preview, string $ability = 'preview'): array
     {
         $store = is_string($this->store) ? app($this->store) : $this->store;
         $owner = $context->document;
         if ($store instanceof EloquentDocumentStore) {
-            $store->authorize($context, 'preview');
+            $store->authorize($context, $ability);
             $owner = $store->owner($context);
             $context = $context->forDocument($owner);
         }

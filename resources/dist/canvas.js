@@ -617,7 +617,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				if (this.textEditing && this.current?._key !== this.textEditing.key) this.commitTextEditing();
 				this.syncInspector();
 			});
-			if (this.$wire && this.$watch) this.disposeInspectorWatch = this.$watch("$wire.inspectorData", (values) => this.queueInspectorChanges(values));
+			if (!options.readOnly && this.$wire && this.$watch) this.disposeInspectorWatch = this.$watch("$wire.inspectorData", (values) => this.queueInspectorChanges(values));
 			this.syncInspector();
 		},
 		schedulePreview() {
@@ -778,6 +778,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			return this.elementTypes[block?.type]?.kind === "text";
 		},
 		syncInspector() {
+			if (options.readOnly) return;
 			if (this.drawingSession?.creating) return;
 			if (this.destroyed) return;
 			this.syncRichEditor();
@@ -1418,6 +1419,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			};
 		},
 		key(e) {
+			if (options.readOnly) return;
 			if (this.drawingSession && ["Enter", "Escape"].includes(e.key)) {
 				e.preventDefault();
 				e.stopPropagation();
@@ -1776,7 +1778,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			};
 		},
 		onPreviewLoad() {
-			if (this.destroyed || !this.$refs.preview?.srcdoc) return;
+			if (options.readOnly || this.destroyed || !this.$refs.preview?.srcdoc) return;
 			const doc = this.$refs.preview.contentDocument, page = doc?.querySelector(".page");
 			if (!page) return;
 			this.syncPreviewFonts(doc);
@@ -1906,7 +1908,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.previewAnchor.after(...visible);
 		},
 		async save(wire) {
-			if (this.saving || this.imageUploading || this.adding) return;
+			if (options.readOnly || this.saving || this.imageUploading || this.adding) return;
 			if (this.drawingSession && !this.finishDrawing()) return;
 			if (this.textEditing) this.commitTextEditing();
 			await this.flushInspector();
@@ -1955,7 +1957,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			return this.add(type, data);
 		},
 		add(type, overrides = {}) {
-			if (this.saving || this.adding || !Object.hasOwn(this.labels, type)) return null;
+			if (options.readOnly || this.saving || this.adding || !Object.hasOwn(this.labels, type)) return null;
 			const insert = (initialized) => {
 				if (this.destroyed) return null;
 				if (this.drawingSession && !this.finishDrawing()) this.cancelDrawing();

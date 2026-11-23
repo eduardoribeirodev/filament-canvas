@@ -79,6 +79,30 @@ class TemplatesTest extends TestCase
         Livewire::test(CanvasEditor::class, CanvasTemplatePage::editorParameters($this->templatesOwner->id))->assertOk()->call('preview', [$this->templatesBlock()])->assertHasNoErrors();
         $this->assertSame('filament-canvas::templates.blank', $plugin->getTemplate());
     }
+    public function test_view_only_user_can_open_the_saved_canvas_but_cannot_edit_it(): void
+    {
+        $this->templatesPanel(CanvasPlugin::make());
+        $block = $this->templatesBlock();
+        $this->templatesOwner->saveCanvas([$block], $this->templatesOwner->getCanvas()->revision);
+        Gate::swap(new \Illuminate\Auth\Access\Gate(app(), fn () => auth()->user()));
+        Gate::before(fn ($user, string $ability) => in_array($ability, ['view', 'viewAny'], true));
+
+        Livewire::test(CanvasTemplatePage::class, ['record' => $this->templatesOwner->id])->assertOk();
+        $parameters = CanvasTemplatePage::editorParameters($this->templatesOwner->id);
+        $editor = Livewire::test(CanvasEditor::class, $parameters)->assertOk();
+        $this->assertTrue($editor->instance()->render()->getData()['readOnly']);
+        $this->assertStringContainsString('data-kind="text"', $editor->instance()->render()->getData()['previewHtml']);
+        $editor->assertDontSeeHtml('data-canvas-save')->assertDontSeeHtml('class="fc-toolbar"');
+
+        Livewire::test(CanvasEditor::class, $parameters)->call('createElement', 'text')->assertForbidden();
+        Livewire::test(CanvasEditor::class, $parameters)->call('selectInspector', 'text', '1', $block, 1)->assertForbidden();
+        Livewire::test(CanvasEditor::class, $parameters)->call('mountAction', 'create')->assertForbidden();
+        Livewire::test(CanvasEditor::class, $parameters)->call('uploadAsset')->assertForbidden();
+        Livewire::test(CanvasEditor::class, $parameters)->call('save', [])->assertForbidden();
+        Livewire::test(CanvasEditor::class, $parameters)->call('preview', [])->assertForbidden();
+        $this->assertSame(1, $this->templatesOwner->canvasElements()->count());
+    }
+
     public function test_configured_background_appears_on_the_canvas_and_each_exported_page_can_override_it(): void
     {
         config(['filament-canvas.background_color' => '#ede7dc']);

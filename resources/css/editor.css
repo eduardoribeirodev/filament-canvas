@@ -71,6 +71,12 @@
     height: var(--fc-workspace-height, clamp(360px, 65dvh, 800px));
     min-height: 280px;
 }
+.fc-editor .fc-layout.fc-layout-read-only {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "header" "error" "stage";
+    height: var(--fc-workspace-height, clamp(360px, 65dvh, 800px));
+}
 .fc-editor .fc-stage-column { grid-area: stage; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .fc-editor .fc-stage-viewport { position: relative; display: flex; flex: 1 1 0%; min-width: 0; min-height: 0; }
 .fc-editor .fc-stage {

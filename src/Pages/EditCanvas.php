@@ -71,7 +71,7 @@ abstract class EditCanvas extends Page
         $this->documentId = (string) $record;
         $panel = Filament::getCurrentPanel();
         $context = new EditorContext(new DocumentReference(static::getCanvasDocumentType(), $record), Filament::auth()->user(), $panel->getId());
-        static::getCanvasPlugin($panel->getId())->resolveDocumentStore(static::getCanvasDocumentType())->authorize($context, 'update');
+        static::getCanvasPlugin($panel->getId())->resolveDocumentStore(static::getCanvasDocumentType())->authorize($context, 'view');
     }
 
     public function content(Schema $schema): Schema

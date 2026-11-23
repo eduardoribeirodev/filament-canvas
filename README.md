@@ -487,6 +487,12 @@ You can override `view()` or extend `form()` to add fields. Extending `CanvasEle
 
 ## Advanced Features
 
+### Read-only access
+
+A user authorized to `view` the document opens the canvas. The editor enables editing only when the user is also authorized to `update` it. Users with view-only access see the saved composition and can zoom and pan. This applies to the resource page and embedded canvas components.
+
+For custom document stores, implement the same distinction in `authorize()`. Deny updates by throwing a Laravel authorization exception or returning a 403 response via `abort(403)`. Custom preview renderers should accept view access when rendering the saved composition.
+
 ### Canvas Background
 
 Set `background_color` in [config/filament-canvas.php](config/filament-canvas.php) to a hexadecimal CSS color for the built-in canvas template. To override it per document, return a `background_color` value from the model's `canvasMetadata()` method or pass it in the `CanvasDocument` metadata when using a custom store.

@@ -1,7 +1,7 @@
 <div class="canvas-livewire-shell">
 <div class="fc-editor"
     x-load x-load-src="{{ \Filament\Support\Facades\FilamentAsset::getAlpineComponentSrc('canvas', 'eduardoribeirodev/filament-canvas') }}"
-    x-data="canvas(@js($initial), @js($assets), @js($width), @js($height), @js($previewHtml), {labels: @js($elementLabels), elementTypes: @js($elementTypes), templates: @js($elementTemplates), data: @js($metadata), messages: @js(__('filament-canvas::canvas')), minZoom: @js(config('filament-canvas.min_zoom', 0.25)), maxZoom: @js(config('filament-canvas.max_zoom', 3)), fonts: @js(config('filament-canvas.fonts')), fitViewport: true})"
+    x-data="canvas(@js($initial), @js($assets), @js($width), @js($height), @js($previewHtml), {labels: @js($elementLabels), elementTypes: @js($elementTypes), templates: @js($elementTemplates), data: @js($metadata), messages: @js(__('filament-canvas::canvas')), minZoom: @js(config('filament-canvas.min_zoom', 0.25)), maxZoom: @js(config('filament-canvas.max_zoom', 3)), fonts: @js(config('filament-canvas.fonts')), readOnly: @js($readOnly), fitViewport: true})"
     wire:ignore.self x-bind:aria-busy="saving"
     @pointerdown.window.capture="finishInlineEditing($event)" @scroll.window="positionInlineEditor()"
     @canvas-rich-text-change.stop="applyRichText($event.detail,$event.detail.key)"
@@ -10,16 +10,19 @@
     @canvas-asset-created.stop="selectCreatedAsset($event.detail.asset,$event.detail.key,$event.detail.collection)"
     @canvas-asset-selected.stop="selectAsset($event.detail.id,$event.detail.key,$event.detail.collection)"
     @canvas-reference-selected.stop="selectReference($event.detail.id,$event.detail.key)"
-    @filament-canvas-add-element.window="addFromEvent($event)"
+    @unless($readOnly)
+        @filament-canvas-add-element.window="addFromEvent($event)"
+    @endunless
 >
     @include('filament-canvas::partials.font-stylesheet')
     <style>
         {!! \EduardoRibeiroDev\FilamentCanvas\Support\RichText::styles() !!}
         .canvas-native-fields .fi-fo-rich-editor-content{min-height:140px;max-height:320px;overflow-y:auto}
     </style>
-    <div class="fc-layout" x-ref="workspace">
+    <div @class(['fc-layout', 'fc-layout-read-only' => $readOnly]) x-ref="workspace">
         <header class="fc-header" wire:ignore>
             <div class="fc-view-controls">
+                @unless($readOnly)
                 <x-filament::dropdown :menu="false" placement="bottom-start" shift size width="xs">
                     <x-slot:trigger>
                         <x-filament::icon-button type="button" color="gray" icon="heroicon-o-information-circle"
@@ -46,10 +49,16 @@
                         @endforeach
                     </select>
                 </label>
+                @endunless
                 <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrows-pointing-out" label="{{ __('filament-canvas::canvas.fit_screen') }}" title="{{ __('filament-canvas::canvas.fit_screen') }}" @click="fit()" />
-                @include('filament-canvas::partials.canvas-snap')
+                @unless($readOnly)
+                    @include('filament-canvas::partials.canvas-snap')
+                @endunless
                 @include('filament-canvas::partials.canvas-zoom')
             </div>
+            @if($readOnly)
+                <x-filament::badge color="gray">{{ __('filament-canvas::canvas.read_only') }}</x-filament::badge>
+            @else
             <div class="fc-actions">
                 <div class="fc-history">
                     <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-left" label="{{ __('filament-canvas::canvas.undo') }}" title="{{ __('filament-canvas::canvas.undo') }}" @click="undo()" x-bind:disabled="saving || !undoStack.length" />
@@ -59,19 +68,24 @@
                     {{ __('filament-canvas::canvas.save_composition') }}
                 </x-filament::button>
             </div>
+            @endif
         </header>
         <div role="alert" x-cloak x-show="error" class="fc-error fc-workspace-error" wire:ignore>
             <x-filament::icon icon="heroicon-o-exclamation-triangle" /><p x-text="error"></p>
         </div>
+        @unless($readOnly)
         <nav class="fc-toolbar" aria-label="{{ __('filament-canvas::canvas.add_elements') }}" wire:ignore>
             <ul class="canvas-toolbar-items">
                 @include('filament-canvas::partials.canvas-toolbar-groups')
             </ul>
             @isset($toolbarView) @include($toolbarView) @endisset
         </nav>
+        @endunless
         <div class="fc-stage-column">
             <div class="fc-stage-viewport">
-                @include('filament-canvas::partials.canvas-drawing-controls')
+                @unless($readOnly)
+                    @include('filament-canvas::partials.canvas-drawing-controls')
+                @endunless
             <div x-ref="stage" class="fc-stage" wire:ignore tabindex="0" aria-label="{{ __('filament-canvas::canvas.canvas') }}"
                 @keydown="key($event)" @pointerdown.self="if(drawingSession && !finishDrawing())cancelDrawing();commitTextEditing();cropIndex=null;selected=null;$el.focus({preventScroll:true})"
                 @pointermove.stop="move($event)" @pointerup.stop="endGesture()" @pointercancel.stop="endGesture()" @lostpointercapture="endGesture()"
@@ -79,6 +93,7 @@
                 <div x-ref="viewport" :style="viewportStyle()" @pointerdown.self="if(drawingSession && !finishDrawing())cancelDrawing();commitTextEditing();cropIndex=null;selected=null;$refs.stage.focus({preventScroll:true})">
                     <div class="fc-paper" x-ref="paper" :style="paperStyle()" style="background:{{ \EduardoRibeiroDev\FilamentCanvas\Rendering\Html::canvasBackground($metadata) }}" @pointerdown.capture="drawingPointerDown($event)" @pointermove.capture="drawingPointerMove($event)" @pointerdown.self="if(drawingSession && !finishDrawing())cancelDrawing();commitTextEditing();selected=null;cropIndex=null">
                         <iframe x-ref="preview" title="{{ __('filament-canvas::canvas.preview') }}" class="fc-preview" @load="onPreviewLoad()"></iframe>
+                        @unless($readOnly)
                         <template x-for="(b,i) in blocks" :key="b._key">
                             <div class="fc-selection" :class="{'fc-selected':selected===i}" :style="style(b,i)" @dblclick.stop="isText(b) ? startTextEditing($event,i) : (isDrawing(b) ? editDrawing($event,i) : editCrop($event,i))" @pointerdown.stop="if(!isTextEditing(b)) start($event,i,'move')" tabindex="0" @focus="selected=i" :aria-label="b.data.name">
 
@@ -93,13 +108,17 @@
                                 </template>
                             </div>
                         </template>
-                    @include('filament-canvas::partials.canvas-guides')
+                        @include('filament-canvas::partials.canvas-guides')
+                        @endunless
                     </div>
                 </div>
             </div>
             </div>
-            @include('filament-canvas::partials.canvas-inline-text')
+            @unless($readOnly)
+                @include('filament-canvas::partials.canvas-inline-text')
+            @endunless
         </div>
+        @unless($readOnly)
         <aside :inert="Boolean(drawingSession?.creating)" class="fc-sidebar" aria-label="{{ __('filament-canvas::canvas.details_layers') }}">
             <div class="fc-tabs" wire:ignore>
                 <x-filament::tabs label="{{ __('filament-canvas::canvas.editor_panel') }}" role="tablist">
@@ -157,10 +176,13 @@
                 </div>
             </div>
         </aside>
+        @endunless
     </div>
 </div>
     @if ($errors->any())
         <div role="alert" class="fc-error"><x-filament::icon icon="heroicon-o-exclamation-triangle" /><p>{{ $errors->first() }}</p></div>
     @endif
-    <x-filament-actions::modals />
+    @unless($readOnly)
+        <x-filament-actions::modals />
+    @endunless
 </div>

@@ -9,6 +9,7 @@ use EduardoRibeiroDev\FilamentCanvas\Data\DocumentReference;
 use EduardoRibeiroDev\FilamentCanvas\Data\EditorContext;
 use EduardoRibeiroDev\FilamentCanvas\Elements\TextElement;
 use EduardoRibeiroDev\FilamentCanvas\Persistence\EloquentDocumentStore;
+use EduardoRibeiroDev\FilamentCanvas\Rendering\CanvasRenderer;
 use EduardoRibeiroDev\FilamentCanvas\Rendering\Html;
 use EduardoRibeiroDev\FilamentCanvas\Support\BlockValidator;
 use EduardoRibeiroDev\FilamentCanvas\Support\CanvasElements;
@@ -31,6 +32,7 @@ use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
@@ -43,11 +45,17 @@ use Livewire\Attributes\Renderless;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Spatie\MediaLibrary\HasMedia;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class CanvasEditor extends Component implements HasActions, HasSchemas
 {
-    use InteractsWithActions;
-    use InteractsWithSchemas;
+    use InteractsWithActions {
+        mountAction as private mountCanvasAction;
+        callMountedAction as private callMountedCanvasAction;
+    }
+    use InteractsWithSchemas {
+        callSchemaComponentMethod as private callCanvasSchemaComponentMethod;
+    }
     use RestrictsFileUploadsToSchemaComponents;
 
     #[Locked]
@@ -113,6 +121,49 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $this->cacheDocument($document);
     }
 
+    private function authorizeUpdate(): void
+    {
+        $this->plugin()->resolveDocumentStore($this->documentType)->authorize($this->context(), 'update');
+    }
+
+    private function canUpdate(): bool
+    {
+        try {
+            $this->authorizeUpdate();
+
+            return true;
+        } catch (AuthorizationException) {
+            return false;
+        } catch (HttpExceptionInterface $exception) {
+            if ($exception->getStatusCode() !== 403) {
+                throw $exception;
+            }
+
+            return false;
+        }
+    }
+
+    public function mountAction(string $name, array $arguments = [], array $context = []): mixed
+    {
+        $this->authorizeUpdate();
+
+        return $this->mountCanvasAction($name, $arguments, $context);
+    }
+
+    public function callMountedAction(array $arguments = []): mixed
+    {
+        $this->authorizeUpdate();
+
+        return $this->callMountedCanvasAction($arguments);
+    }
+
+    public function callSchemaComponentMethod(string $componentKey, string $method, array $arguments = []): mixed
+    {
+        $this->authorizeUpdate();
+
+        return $this->callCanvasSchemaComponentMethod($componentKey, $method, $arguments);
+    }
+
     public function propertiesForm(Schema $schema): Schema
     {
         $schema->key('propertiesForm')->statePath('inspectorData');
@@ -131,7 +182,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     #[Renderless]
     public function createElement(string $type): array
     {
-        $this->plugin()->resolveDocumentStore($this->documentType)->authorize($this->context(), 'update');
+        $this->authorizeUpdate();
         $element = CanvasElements::resolve($this->plugin()->elements($this->documentType), $type);
         $this->elementCreationData = [];
         $schema = $element->form(Schema::make($this)->statePath('elementCreationData'));
@@ -147,7 +198,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     /** Selection tokens prevent requests for an old form from replacing a newer selection. */
     public function selectInspector(?string $type, ?string $key, array $block, int $generation): array
     {
-        $this->plugin()->resolveDocumentStore($this->documentType)->authorize($this->context(), 'view');
+        $this->authorizeUpdate();
         if ($generation < $this->inspectorGeneration) {
             return ['stale' => true];
         }
@@ -677,24 +728,31 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $store = $plugin->resolveDocumentStore($this->documentType);
         $store->authorize($context, 'view');
         $document = $this->document();
-        $assets = $this->inspectorAssets();
-        $canUpload = $context->document instanceof HasMedia;
+        $readOnly = ! $this->canUpdate();
+        $assets = $readOnly ? [] : $this->inspectorAssets();
+        $canUpload = ! $readOnly && $context->document instanceof HasMedia;
         $elements = $plugin->elements($this->documentType);
-        foreach ($this->inspectorType === null ? CanvasElements::types($elements) : [$this->inspectorType] as $type) {
+        foreach ($readOnly ? [] : ($this->inspectorType === null ? CanvasElements::types($elements) : [$this->inspectorType]) as $type) {
             $element = CanvasElements::resolve($elements, $type);
             if ($element instanceof HasElementMedia && collect($element->mediaCollections())->contains(fn($collection) => isset($collection['upload_owner']))) {
                 $canUpload = true;
             }
         }
 
+        $renderer = $plugin->resolvePreviewRenderer($this->documentType);
+        $previewHtml = $readOnly && $renderer instanceof CanvasRenderer
+            ? $renderer->renderSavedPreview($document, $context)
+            : $renderer->render($document, $context);
+
         return view($plugin->getEditorView($this->documentType), [
+            'readOnly' => $readOnly,
             'metadata' => $document->metadata,
-            'initial' => $document->blocks,
+            'initial' => $readOnly ? [] : $document->blocks,
             'assets' => $assets,
             'canUploadAssets' => $canUpload,
             'width' => $document->width,
             'height' => $document->height,
-            'previewHtml' => $plugin->resolvePreviewRenderer($this->documentType)->render($document, $context),
+            'previewHtml' => $previewHtml,
             'elementLabels' => CanvasElements::labels($elements),
             'elementGroups' => CanvasElements::toolbarGroups($elements),
             'elementIcons' => CanvasElements::icons($elements),

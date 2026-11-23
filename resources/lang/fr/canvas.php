@@ -88,6 +88,7 @@ return [
     'fit_screen' => 'Ajuster à l’écran',
     'details_layers' => 'Détails et calques',
     'editor_panel' => 'Panneau de l’éditeur',
+    'read_only' => 'Lecture seule',
     'properties' => 'Propriétés',
     'layers' => 'Calques',
     'layer_help' => 'De l’avant vers l’arrière. Faites glisser la poignée pour réordonner.',

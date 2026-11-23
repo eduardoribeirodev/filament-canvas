@@ -88,6 +88,7 @@ return [
     'fit_screen' => 'An Bildschirm anpassen',
     'details_layers' => 'Details und Ebenen',
     'editor_panel' => 'Editorbereich',
+    'read_only' => 'Schreibgeschützt',
     'properties' => 'Eigenschaften',
     'layers' => 'Ebenen',
     'layer_help' => 'Von vorne nach hinten. Zum Sortieren den Griff ziehen.',

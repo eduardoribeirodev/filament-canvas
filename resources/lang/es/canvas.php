@@ -88,6 +88,7 @@ return [
     'fit_screen' => 'Ajustar a la pantalla',
     'details_layers' => 'Detalles y capas',
     'editor_panel' => 'Panel del editor',
+    'read_only' => 'Solo lectura',
     'properties' => 'Propiedades',
     'layers' => 'Capas',
     'layer_help' => 'De delante hacia atrás. Arrastra el control para reordenar.',
