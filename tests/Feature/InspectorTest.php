@@ -74,7 +74,9 @@ class InspectorTest extends TestCase
     public function test_text_inspector_uses_project_fonts_and_persists_the_selected_family(): void
     {
         $brandFont = '"Brand Sans", sans-serif';
-        $stylesheet = 'https://assets.example.test/canvas-fonts.css';
+        app('url')->useAssetOrigin('https://assets.example.test');
+        $stylesheet = 'css/canvas-fonts.css';
+        $stylesheetUrl = 'https://assets.example.test/css/canvas-fonts.css';
         config([
             'filament-canvas.fonts' => ['Georgia, serif' => 'Georgia', $brandFont => 'Brand Sans'],
             'filament-canvas.font_stylesheet' => $stylesheet,
@@ -89,7 +91,7 @@ class InspectorTest extends TestCase
             ->assertHasNoErrors();
         $this->assertSame('Georgia, serif', $editor->get('inspectorData.font_family'));
         $this->assertSame(config('filament-canvas.fonts'), $editor->instance()->getSchemaComponent('propertiesForm.font_family')->getOptions());
-        $this->assertStringContainsString($stylesheet, $editor->html());
+        $this->assertStringContainsString('href="'.$stylesheetUrl.'"', $editor->html());
 
         $values = $editor->get('inspectorData');
         $values['font_family'] = $brandFont;
@@ -99,7 +101,10 @@ class InspectorTest extends TestCase
         $block['data']['properties']['font_family'] = $brandFont;
         $editor->call('save', [$block])->assertHasNoErrors();
         $this->assertSame($brandFont, $document->canvasElements()->firstOrFail()->properties['font_family']);
-        $this->assertStringContainsString($stylesheet, $editor->instance()->preview([$block]));
+        $this->assertStringContainsString('href="'.$stylesheetUrl.'"', $editor->instance()->preview([$block]));
+
+        config(['filament-canvas.font_stylesheet' => 'https://fonts.example.test/brand.css']);
+        $this->assertStringContainsString('href="https://fonts.example.test/brand.css"', $editor->instance()->preview([$block]));
     }
 
     public function test_native_repeater_actions_resolve_the_properties_schema_and_preserve_unsaved_state(): void

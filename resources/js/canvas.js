@@ -795,7 +795,11 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             if(!this.$el?.ownerDocument?.createElement)return;
             const fontRules=[];
             const collect=rules=>{for(const rule of rules){if(fontRules.length>=32)return;if(rule.type===5)fontRules.push(rule.cssText);else if(rule.cssRules)collect(rule.cssRules);}};
-            for(const sheet of document.styleSheets || []){try{collect(sheet.cssRules);}catch{/* External stylesheets may deny access to their rules. */}}
+            for (const sheet of document.styleSheets || []) {
+                // The editor loads this stylesheet directly, preserving its relative font URLs.
+                if (sheet.ownerNode?.hasAttribute('data-canvas-font-stylesheet')) continue;
+                try { collect(sheet.cssRules); } catch { /* External stylesheets may deny access to their rules. */ }
+            }
             if(!fontRules.length){this.previewFontStyle?.remove();this.previewFontStyle=null;return;}
             if(!this.previewFontStyle){this.previewFontStyle=this.$el.ownerDocument.createElement('style');this.previewFontStyle.dataset.canvasPreviewFonts='';this.$el.prepend(this.previewFontStyle);}
             const css=fontRules.join('\n');

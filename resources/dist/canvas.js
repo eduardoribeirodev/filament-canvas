@@ -1807,9 +1807,12 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 					else if (rule.cssRules) collect(rule.cssRules);
 				}
 			};
-			for (const sheet of document.styleSheets || []) try {
-				collect(sheet.cssRules);
-			} catch {}
+			for (const sheet of document.styleSheets || []) {
+				if (sheet.ownerNode?.hasAttribute("data-canvas-font-stylesheet")) continue;
+				try {
+					collect(sheet.cssRules);
+				} catch {}
+			}
 			if (!fontRules.length) {
 				this.previewFontStyle?.remove();
 				this.previewFontStyle = null;

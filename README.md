@@ -509,10 +509,10 @@ Set `fonts` in `config/filament-canvas.php` to a non-empty map of CSS font stack
     '"Brand Sans", sans-serif' => 'Brand Sans',
     'Georgia, serif' => 'Georgia',
 ],
-'font_stylesheet' => 'https://assets.example.com/canvas-fonts.css',
+'font_stylesheet' => 'css/canvas-fonts.css',
 ```
 
-Use `font_stylesheet` to load project fonts in the editor, preview and exported HTML. Define the families in that stylesheet with `@font-face` and make the stylesheet and font files accessible to the browser and export renderer. Use an absolute stylesheet URL so standalone documents can load it, and configure CORS on the font host as needed.
+Use `font_stylesheet` to load project fonts in the editor, preview and exported HTML. Define the families in that stylesheet with `@font-face` and make the stylesheet and font files accessible to the browser and export renderer. Use a path relative to the application’s public assets, such as `css/canvas-fonts.css`, or an absolute URL. Relative paths are resolved with Laravel’s `asset()` helper so standalone documents can load them. Configure CORS on the font host as needed.
 
 ### Media Collections
 
