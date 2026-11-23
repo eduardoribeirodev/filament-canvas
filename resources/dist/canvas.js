@@ -666,13 +666,14 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			if (!workspace || !stage || this.destroyed || typeof window === "undefined") return;
 			if (this.$el.closest(".canvas-editor-page") && window.matchMedia("(min-width:1024px)").matches) {
 				const top = workspace.getBoundingClientRect().top + window.scrollY;
-				const height = Math.max(280, Math.floor((window.visualViewport?.height || window.innerHeight) - top - (this.$refs.help?.offsetHeight || 0) - 24));
+				const height = Math.max(280, Math.floor((window.visualViewport?.height || window.innerHeight) - top - 24));
 				workspace.style.setProperty("--fc-workspace-height", height + "px");
 			} else workspace.style.removeProperty("--fc-workspace-height");
 			const size = stage.clientWidth + ":" + stage.clientHeight;
 			if (size === this.editorViewportSize) return;
 			this.editorViewportSize = size;
 			if (this.editorFitZoom === null || Math.abs(this.zoom - this.editorFitZoom) < 1e-4) this.fit();
+			else this.placeViewport(this.zoom, this.viewport.x - stage.scrollLeft, this.viewport.y - stage.scrollTop);
 		},
 		mountZoomSlider(element) {
 			const component = globalThis.Alpine?.$data?.(element), slider = component?.slider;
@@ -733,13 +734,17 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 		placeViewport(zoom, left, top) {
 			const stage = this.$refs.stage;
 			if (!stage) return;
-			const scrollLeft = Math.max(0, 32 - left), scrollTop = Math.max(0, 32 - top);
+			const paperWidth = this.pageWidth * zoom, paperHeight = this.pageHeight * zoom;
+			const freeX = stage.clientWidth - paperWidth, freeY = stage.clientHeight - paperHeight;
+			const scrollLeft = Math.max(0, Math.max(32, freeX) - left);
+			const scrollTop = Math.max(0, Math.max(32, freeY) - top);
+			const x = left + scrollLeft, y = top + scrollTop;
 			this.zoom = zoom;
 			this.viewport = {
-				x: left + scrollLeft,
-				y: top + scrollTop,
-				width: Math.max(stage.clientWidth + scrollLeft, left + scrollLeft + this.pageWidth * zoom + 32),
-				height: Math.max(stage.clientHeight + scrollTop, top + scrollTop + this.pageHeight * zoom + 32)
+				x,
+				y,
+				width: Math.max(stage.clientWidth + scrollLeft, x + paperWidth + 32, freeX > 0 ? stage.clientWidth + x : 0),
+				height: Math.max(stage.clientHeight + scrollTop, y + paperHeight + 32, freeY > 0 ? stage.clientHeight + y : 0)
 			};
 			const space = this.$refs.viewport, paper = this.$refs.paper;
 			if (space?.style) Object.assign(space.style, this.viewportStyle());
@@ -988,6 +993,18 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			this.cropIndex = null;
 			this.syncInspector();
 			this.syncPreview();
+		},
+		selectCreatedAsset(asset, key, collection) {
+			if (!this.assets.some((item) => String(item.id) === String(asset.id))) this.assets.push(asset);
+			if (String(this.current?._key) !== String(key)) return;
+			const policy = this.mediaCollection(this.current, collection);
+			if (!policy) return;
+			if (policy.max_files === 1) {
+				this.selectAsset(asset.id, key, collection);
+				return;
+			}
+			const ids = this.current.data[policy.reference_field] ?? [];
+			if (!ids.some((id) => String(id) === String(asset.id))) this.selectAsset([...ids, asset.id], key, collection);
 		},
 		mediaImages(block, collection) {
 			const policy = this.mediaCollection(block, collection);

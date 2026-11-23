@@ -72,8 +72,6 @@ return [
     'visual_editor' => 'Visueller Editor',
     'element_count' => ':count Element(e)',
     'saving' => 'Wird gespeichert…',
-    'unsaved_changes' => 'Ungespeicherte Änderungen',
-    'all_saved' => 'Alle Änderungen gespeichert',
     'undo' => 'Rückgängig',
     'redo' => 'Wiederholen',
     'save_composition' => 'Komposition speichern',

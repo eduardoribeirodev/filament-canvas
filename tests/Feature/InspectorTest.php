@@ -180,6 +180,30 @@ class InspectorTest extends TestCase
         $this->assertSame($png['image'], $values['media']['gallery'][0]['image']);
     }
 
+    public function test_image_picker_creates_and_selects_an_uploaded_option(): void
+    {
+        $edition = $this->dynamicElementInspectorPrepareEditor();
+        Filament::getCurrentPanel()->getPlugin('filament-canvas')->element(new InspectorMediaElement)->documentElements('test-document', ['test-card', 'test-media']);
+        config()->set('livewire.temporary_file_upload.disk', 'canvas_temporary_uploads');
+        Storage::fake('canvas_temporary_uploads');
+        $block = $this->dynamicElementInspectorBlock('Medias');
+        $block['type'] = 'test-media';
+        $block['data']['properties'] = [];
+        $existing = $edition->addMedia(UploadedFile::fake()->image('existing.png'))->toMediaCollection('library');
+        $block['data']['gallery_assets'] = [$existing->id];
+        $editor = $this->dynamicElementInspectorEditor($edition)->call('selectInspector', 'test-media', 'media', $block, 1);
+        $picker = $editor->instance()->imageForm->getComponentByStatePath('collections.gallery');
+
+        $editor->call('mountAction', 'createOption', [], ['schemaComponent' => $picker->getKey()])
+            ->set('mountedActions.0.data.file', [UploadedFile::fake()->image('new.png')])
+            ->call('callMountedAction')
+            ->assertHasNoErrors()
+            ->assertDispatched('canvas-asset-created', fn ($name, $params) => $params['key'] === 'media' && $params['collection'] === 'gallery');
+
+        $created = Media::query()->where('name', 'new')->sole();
+        $editor->assertSet('mediaPickerData.collections.gallery', [$existing->id, $created->id]);
+    }
+
     public function test_upload_rpc_enforces_the_selected_collections_mime_size_and_file_count(): void
     {
         $edition = $this->dynamicElementInspectorPrepareEditor();

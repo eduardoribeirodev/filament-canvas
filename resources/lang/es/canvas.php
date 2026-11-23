@@ -72,8 +72,6 @@ return [
     'visual_editor' => 'Editor visual',
     'element_count' => ':count elemento(s)',
     'saving' => 'Guardando…',
-    'unsaved_changes' => 'Cambios sin guardar',
-    'all_saved' => 'Todos los cambios guardados',
     'undo' => 'Deshacer',
     'redo' => 'Rehacer',
     'save_composition' => 'Guardar composición',

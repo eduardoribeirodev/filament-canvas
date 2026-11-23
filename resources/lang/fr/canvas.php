@@ -72,8 +72,6 @@ return [
     'visual_editor' => 'Éditeur visuel',
     'element_count' => ':count élément(s)',
     'saving' => 'Enregistrement…',
-    'unsaved_changes' => 'Modifications non enregistrées',
-    'all_saved' => 'Toutes les modifications sont enregistrées',
     'undo' => 'Annuler',
     'redo' => 'Rétablir',
     'save_composition' => 'Enregistrer la composition',

@@ -220,8 +220,11 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $this->inspectorRevision = $revision;
 
         return [
-            'key' => $key, 'generation' => $generation, 'revision' => $revision,
-            'patch' => $patch, 'removed' => $removed,
+            'key' => $key,
+            'generation' => $generation,
+            'revision' => $revision,
+            'patch' => $patch,
+            'removed' => $removed,
         ];
     }
 
@@ -229,7 +232,8 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     {
         Validator::make($block, [
             'type' => ['required', 'string', Rule::in($type === null ? CanvasElements::types($this->plugin()->elements($this->documentType)) : [$type])],
-            'data' => ['required', 'array'], 'data.properties' => ['sometimes', 'array'],
+            'data' => ['required', 'array'],
+            'data.properties' => ['sometimes', 'array'],
         ])->validate();
     }
 
@@ -308,7 +312,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $textElement = $definition instanceof TextElement ? $definition : new TextElement;
 
         return $schema->statePath('inlineTextData')->components([
-            $textElement->inlineEditorField()->key('inline-'.($this->inspectorType ?? 'text'))->live(condition: false)->stateBindingModifiers([])
+            $textElement->inlineEditorField()->key('inline-' . ($this->inspectorType ?? 'text'))->live(condition: false)->stateBindingModifiers([])
                 ->extraInputAttributes([
                     'data-canvas-inline-rich-editor' => 'true',
                     'x-init' => <<<'JS'
@@ -332,8 +336,14 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
 
     public function imageForm(Schema $schema): Schema
     {
+        $context = $this->context();
         $fields = [];
-        foreach ($this->elementMediaCollections() as $index => $collection) {
+
+        $element = $this->inspectorType === null
+            ? null
+            : CanvasElements::resolve($this->plugin()->elements($this->documentType), $this->inspectorType);
+
+        foreach ($this->elementMediaCollections() as $collection) {
             $name = $collection['name'];
             $field = Select::make($collection['picker_field'])
                 ->label(__('filament-canvas::canvas.from_library', ['label' => $collection['label']]))
@@ -343,9 +353,9 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
                 ->allowHtml()
                 ->optionsLimit(100)
                 ->searchDebounce(250)
-                ->options(fn () => $this->assetOptions('', $name))
-                ->getSearchResultsUsing(fn (string $search) => $this->assetOptions($search, $name))
-                ->getOptionLabelUsing(fn ($value) => $this->assetOptions('', $name)[$value] ?? null)
+                ->options(fn() => $this->assetOptions('', $name))
+                ->getSearchResultsUsing(fn(string $search) => $this->assetOptions($search, $name))
+                ->getOptionLabelUsing(fn($value) => $this->assetOptions('', $name)[$value] ?? null)
                 ->extraAlpineAttributes([
                     'data-canvas-image-select' => 'true',
                     'data-canvas-media-collection' => $name,
@@ -356,7 +366,33 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             if ($collection['max_files'] > 1) {
                 $field->multiple()
                     ->maxItems($collection['max_files'])
-                    ->getOptionLabelsUsing(fn (array $values) => array_intersect_key($this->assetOptions('', $name), array_flip($values)));
+                    ->getOptionLabelsUsing(fn(array $values) => array_intersect_key($this->assetOptions('', $name), array_flip($values)));
+            }
+            if ($element instanceof HasElementMedia && ($context->document instanceof HasMedia || isset($element->mediaCollections()[$name]['upload_owner']))) {
+                $field->createOptionForm([$this->mediaUploadField('file', $collection)->required()])
+                    ->createOptionModalHeading(__('filament-canvas::canvas.upload_label', ['label' => $collection['label']]))
+                    ->createOptionUsing(function (array $data, Select $component, Schema $schema) use ($collection, $context, $element, $name) {
+                        $this->plugin()->resolveDocumentStore($this->documentType)->authorize($context, 'update');
+                        $file = $data['file'] ?? null;
+                        $filePath = $schema->getStatePath() . '.file';
+                        if (! $file instanceof TemporaryUploadedFile) {
+                            throw ValidationException::withMessages([$filePath => __('filament-canvas::canvas.select_file')]);
+                        }
+                        if ($component->isMultiple() && count($component->getState() ?? []) >= $collection['max_files']) {
+                            throw ValidationException::withMessages([$filePath => __('validation.max.array', ['attribute' => $collection['label'], 'max' => $collection['max_files']])]);
+                        }
+
+                        try {
+                            $asset = (new MediaLibrary($context))->upload($file, $element, $name);
+                        } catch (ValidationException $exception) {
+                            throw ValidationException::withMessages([$filePath => $exception->validator->errors()->all()]);
+                        }
+                        $file->delete();
+                        $this->inspectorAssetCache = [];
+                        $this->dispatch('canvas-asset-created', asset: $asset, key: $this->inspectorKey, collection: $name);
+
+                        return $asset['id'];
+                    });
             }
             $fields[] = $field;
         }
@@ -368,25 +404,29 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     {
         $fields = [];
         foreach ($this->elementMediaCollections() as $collection) {
-            $field = FileUpload::make($collection['upload_field'])
-                ->label(__('filament-canvas::canvas.upload_label', ['label' => $collection['label']]))
-                ->storeFiles(false)
-                ->acceptedFileTypes($collection['accepted_mime_types'])
-                ->maxSize($collection['max_size'])
-                ->maxFiles($collection['max_files'])
-                ->imagePreviewHeight('130')
-                ->helperText(__('filament-canvas::canvas.max_file_size', ['size' => number_format($collection['max_size'] / 1024, 1)]));
+            $field = $this->mediaUploadField($collection['upload_field'], $collection)->maxFiles($collection['max_files']);
             if ($collection['max_files'] > 1) {
                 $field->multiple();
             }
-            if (collect($collection['accepted_mime_types'])->every(fn ($mime) => str_starts_with($mime, 'image/'))) {
-                $field->image();
-            }
-            $field->acceptedFileTypes($collection['accepted_mime_types']);
             $fields[] = $field;
         }
 
         return $schema->statePath('imageUploadData')->components($fields);
+    }
+
+    private function mediaUploadField(string $fieldName, array $collection): FileUpload
+    {
+        $field = FileUpload::make($fieldName)
+            ->label(__('filament-canvas::canvas.upload_label', ['label' => $collection['label']]))
+            ->storeFiles(false)
+            ->maxSize($collection['max_size'])
+            ->imagePreviewHeight('130')
+            ->helperText(__('filament-canvas::canvas.max_file_size', ['size' => number_format($collection['max_size'] / 1024, 1)]));
+        if (collect($collection['accepted_mime_types'])->every(fn($mime) => str_starts_with($mime, 'image/'))) {
+            $field->image();
+        }
+
+        return $field->acceptedFileTypes($collection['accepted_mime_types']);
     }
 
     /** Collection metadata drives both native pickers and upload validation. */
@@ -394,20 +434,25 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     {
         $element = $this->inspectorType === null ? null : CanvasElements::resolve($this->plugin()->elements($this->documentType), $this->inspectorType);
         $collections = $element instanceof HasElementMedia ? CanvasElements::mediaCollectionMetadata($element) : ($element === null ? ['image' => [
-            'label' => __('filament-canvas::canvas.image'), 'accepted_mime_types' => ['image/png', 'image/jpeg', 'image/webp'],
-            'max_files' => 1, 'max_size' => 10240, 'reference_field' => 'image_id',
+            'label' => __('filament-canvas::canvas.image'),
+            'accepted_mime_types' => ['image/png', 'image/jpeg', 'image/webp'],
+            'max_files' => 1,
+            'max_size' => 10240,
+            'reference_field' => 'image_id',
         ]] : []);
         $result = [];
         foreach ($collections as $name => $collection) {
             $first = $result === [];
             $result[] = [
-                ...$collection, 'name' => $name, 'label' => $collection['label'] ?? $name,
+                ...$collection,
+                'name' => $name,
+                'label' => $collection['label'] ?? $name,
                 'accepted_mime_types' => $collection['accepted_mime_types'] ?? ['image/png', 'image/jpeg', 'image/webp'],
                 'max_files' => max(1, (int) ($collection['max_files'] ?? 1)),
                 'max_size' => max(1, (int) ($collection['max_size'] ?? 10240)),
                 'reference_field' => $collection['reference_field'] ?? 'image_id',
-                'picker_field' => $first ? 'image' : 'collections.'.$name,
-                'upload_field' => $first ? 'file' : 'collections.'.$name.'.file',
+                'picker_field' => $first ? 'image' : 'collections.' . $name,
+                'upload_field' => $first ? 'file' : 'collections.' . $name . '.file',
             ];
         }
 
@@ -416,14 +461,14 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
 
     public function assetOptions(string $search = '', ?string $collection = null): array
     {
-        $policy = collect($this->elementMediaCollections())->first(fn ($item) => $collection === null || $item['name'] === $collection);
+        $policy = collect($this->elementMediaCollections())->first(fn($item) => $collection === null || $item['name'] === $collection);
         $options = [];
         foreach ($this->inspectorAssets($policy['name'] ?? null) as $asset) {
             if ($search !== '' && ! str_contains(mb_strtolower((string) ($asset['name'] ?? '')), mb_strtolower($search))) {
                 continue;
             }
             $mime = $asset['mime_type'] ?? null;
-            if ($mime !== null && $policy !== null && ! collect($policy['accepted_mime_types'])->contains(fn ($accepted) => $accepted === $mime || (str_ends_with($accepted, '/*') && str_starts_with($mime, Str::before($accepted, '*'))))) {
+            if ($mime !== null && $policy !== null && ! collect($policy['accepted_mime_types'])->contains(fn($accepted) => $accepted === $mime || (str_ends_with($accepted, '/*') && str_starts_with($mime, Str::before($accepted, '*'))))) {
                 continue;
             }
             $options[$asset['id']] = $this->optionLabel($asset['name'] ?? __('filament-canvas::canvas.media'), $asset['image'] ?? $asset['url'] ?? null);
@@ -441,9 +486,9 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     private function optionLabel(string $label, ?string $image): string
     {
         $url = Html::imageUrl($image);
-        $preview = $url === '' ? '' : '<img src="'.$url.'" alt="" style="width:40px;height:40px;object-fit:contain;flex:none;border-radius:4px">';
+        $preview = $url === '' ? '' : '<img src="' . $url . '" alt="" style="width:40px;height:40px;object-fit:contain;flex:none;border-radius:4px">';
 
-        return '<span style="display:flex;align-items:center;gap:8px;min-height:40px">'.$preview.'<span style="white-space:normal">'.e($label).'</span></span>';
+        return '<span style="display:flex;align-items:center;gap:8px;min-height:40px">' . $preview . '<span style="white-space:normal">' . e($label) . '</span></span>';
     }
 
     private function inspectorAssets(?string $collection = null): array
@@ -478,7 +523,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     {
         $context = $this->context();
         $this->plugin()->resolveDocumentStore($this->documentType)->authorize($context, 'update');
-        $policy = collect($this->elementMediaCollections())->first(fn ($item) => $collection === null || $item['name'] === $collection);
+        $policy = collect($this->elementMediaCollections())->first(fn($item) => $collection === null || $item['name'] === $collection);
         if ($policy === null) {
             throw ValidationException::withMessages(['imageUploadData.file' => __('filament-canvas::canvas.missing_collection')]);
         }
@@ -488,8 +533,8 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $library = new MediaLibrary($context);
         $state = $this->imageUploadForm->getState();
         $files = Arr::wrap(data_get($state, $policy['upload_field']));
-        if ($files === [] || collect($files)->contains(fn ($file) => ! $file instanceof TemporaryUploadedFile)) {
-            throw ValidationException::withMessages(['imageUploadData.'.$policy['upload_field'] => __('filament-canvas::canvas.select_file')]);
+        if ($files === [] || collect($files)->contains(fn($file) => ! $file instanceof TemporaryUploadedFile)) {
+            throw ValidationException::withMessages(['imageUploadData.' . $policy['upload_field'] => __('filament-canvas::canvas.select_file')]);
         }
         try {
             $inserted = [];
@@ -544,7 +589,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
 
     private function cacheKey(): string
     {
-        return 'filament-canvas:'.$this->panelId.':'.($this->context()->user?->getAuthIdentifier() ?? 'guest').':'.$this->canvasDataKey;
+        return 'filament-canvas:' . $this->panelId . ':' . ($this->context()->user?->getAuthIdentifier() ?? 'guest') . ':' . $this->canvasDataKey;
     }
 
     private function cacheDocument(CanvasDocument $document): void
@@ -568,7 +613,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
     {
         $store = $this->plugin()->resolveDocumentStore($this->documentType);
         if ($store instanceof EloquentDocumentStore && method_exists($context->document, 'getCanvas')) {
-            return $store->usingElements(fn () => $context->document->getCanvas($context->user));
+            return $store->usingElements(fn() => $context->document->getCanvas($context->user));
         }
 
         return $store->load($context);
@@ -595,7 +640,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $store->authorize($context, 'update');
         $document = $this->loadCanvasDocument($context);
         if ($store instanceof EloquentDocumentStore && method_exists($context->document, 'saveCanvas')) {
-            $result = $store->usingElements(fn () => $context->document->saveCanvas(
+            $result = $store->usingElements(fn() => $context->document->saveCanvas(
                 $blocks,
                 expectedRevision: $this->revision,
                 user: $context->user,
@@ -637,7 +682,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $elements = $plugin->elements($this->documentType);
         foreach ($this->inspectorType === null ? CanvasElements::types($elements) : [$this->inspectorType] as $type) {
             $element = CanvasElements::resolve($elements, $type);
-            if ($element instanceof HasElementMedia && collect($element->mediaCollections())->contains(fn ($collection) => isset($collection['upload_owner']))) {
+            if ($element instanceof HasElementMedia && collect($element->mediaCollections())->contains(fn($collection) => isset($collection['upload_owner']))) {
                 $canUpload = true;
             }
         }

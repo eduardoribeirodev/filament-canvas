@@ -2,9 +2,9 @@
 
 namespace EduardoRibeiroDev\FilamentCanvas\Elements;
 
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
@@ -59,6 +59,7 @@ class ImageElement extends CanvasElement
                     'cover' => __('filament-canvas::canvas.cover'),
                     'fill' => __('filament-canvas::canvas.fill'),
                 ])
+                ->selectablePlaceholder(false)
                 ->default('contain')
                 ->native(false),
             TextInput::make('opacity')
@@ -68,10 +69,10 @@ class ImageElement extends CanvasElement
                 ->maxValue(1)
                 ->step(.05)
                 ->default(1),
-            Toggle::make('flip_x')
+            Checkbox::make('flip_x')
                 ->label(__('filament-canvas::canvas.flip_x'))
                 ->default(false),
-            Toggle::make('flip_y')
+            Checkbox::make('flip_y')
                 ->label(__('filament-canvas::canvas.flip_y'))
                 ->default(false),
             Select::make('blend_mode')
@@ -81,6 +82,7 @@ class ImageElement extends CanvasElement
                     'multiply' => __('filament-canvas::canvas.multiply'),
                     'screen' => __('filament-canvas::canvas.screen'),
                 ])
+                ->selectablePlaceholder(false)
                 ->default('normal')
                 ->native(false),
             TextInput::make('link_url')

@@ -32,9 +32,26 @@ import { alignMove, alignResize, elementBounds } from '../resources/js/snapping.
         const afterPan=point(state,x,y);
         state.zoomAt(2,x,y);close(point(state,x,y),afterPan);
         assert.equal(state.snapshot(),document);assert.equal(state.dirty,false);assert.equal(state.undoStack.length,0);
-        state.fit();assert.equal(state.$refs.stage.scrollLeft,0);assert.equal(state.$refs.stage.scrollTop,0);
-        assert.ok(state.viewport.x+state.pageWidth*state.zoom<=state.$refs.stage.clientWidth);
-        assert.ok(state.viewport.y+state.pageHeight*state.zoom<=state.$refs.stage.clientHeight);
+        state.fit();
+        close(point(state,441+568/2,261+32),[state.pageWidth/2,0]);
+        assert.ok(state.viewport.x-state.$refs.stage.scrollLeft+state.pageWidth*state.zoom<=state.$refs.stage.clientWidth);
+        assert.ok(state.viewport.y-state.$refs.stage.scrollTop+state.pageHeight*state.zoom<=state.$refs.stage.clientHeight);
+    });
+
+    test('wheel pan can bring a zoomed-out paper to all viewport edges',()=>{
+        const state=editor(),stage=state.$refs.stage;
+        state.setZoom(.25);
+        const wheel=(deltaX,deltaY,shiftKey=false)=>state.wheel({
+            deltaX,deltaY,shiftKey,deltaMode:0,preventDefault(){},stopPropagation(){},
+        });
+        wheel(2000,2000);
+        assert.ok(Math.abs(state.viewport.x-stage.scrollLeft)<1);
+        assert.ok(Math.abs(state.viewport.y-stage.scrollTop)<1);
+        wheel(0,-2000,true);
+        wheel(0,-2000);
+        assert.ok(Math.abs(state.viewport.x-stage.scrollLeft+state.pageWidth*state.zoom-stage.clientWidth)<1);
+        assert.ok(Math.abs(state.viewport.y-stage.scrollTop+state.pageHeight*state.zoom-stage.clientHeight)<1);
+        assert.equal(state.dirty,false);
     });
 
     test('the zoom slider keeps the stage center anchored and rejects invalid input',()=>{

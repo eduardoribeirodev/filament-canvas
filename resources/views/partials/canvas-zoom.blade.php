@@ -2,12 +2,11 @@
 
 <div class="canvas-zoom-control" data-canvas-zoom wire:ignore
     @canvas-zoom-slider-ready.stop="mountZoomSlider($event.detail.element)">
-    <span id="{{ $zoomId }}-label">{{ __('filament-canvas::canvas.zoom') }}</span>
     <div class="canvas-zoom-field">
         <div
             id="{{ $zoomId }}"
             role="group"
-            aria-labelledby="{{ $zoomId }}-label"
+            aria-label="{{ __('filament-canvas::canvas.zoom') }}"
             class="fi-fo-slider"
             data-canvas-zoom-slider
             x-load

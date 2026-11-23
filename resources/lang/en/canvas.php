@@ -72,8 +72,6 @@ return [
     'visual_editor' => 'Visual editor',
     'element_count' => ':count element(s)',
     'saving' => 'Saving…',
-    'unsaved_changes' => 'Unsaved changes',
-    'all_saved' => 'All changes saved',
     'undo' => 'Undo',
     'redo' => 'Redo',
     'save_composition' => 'Save composition',

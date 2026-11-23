@@ -1,4 +1,6 @@
-<label class="canvas-alignment-control" x-tooltip="{content:@js(__('filament-canvas::canvas.guides_hint')),theme:$store.theme}">
-    <x-filament::input.checkbox x-model="alignmentSnap" @change="snapGuides=[]" />
-    <span>{{ __('filament-canvas::canvas.guides') }}</span>
-</label>
+<x-filament::icon-button type="button" color="gray" icon="heroicon-o-viewfinder-circle"
+    class="fc-guide-toggle"
+    label="{{ __('filament-canvas::canvas.guides') }}"
+    title="{{ __('filament-canvas::canvas.guides_hint') }}"
+    x-bind:aria-pressed="alignmentSnap"
+    @click="alignmentSnap = !alignmentSnap; snapGuides = []" />

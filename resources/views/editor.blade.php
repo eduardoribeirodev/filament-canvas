@@ -7,6 +7,7 @@
     @canvas-rich-text-change.stop="applyRichText($event.detail,$event.detail.key)"
     @canvas-rich-text-ready="syncInspector()"
     @canvas-inspector-ready.stop="syncInspector()"
+    @canvas-asset-created.stop="selectCreatedAsset($event.detail.asset,$event.detail.key,$event.detail.collection)"
     @canvas-asset-selected.stop="selectAsset($event.detail.id,$event.detail.key,$event.detail.collection)"
     @canvas-reference-selected.stop="selectReference($event.detail.id,$event.detail.key)"
     @filament-canvas-add-element.window="addFromEvent($event)"
@@ -15,29 +16,52 @@
         {!! \EduardoRibeiroDev\FilamentCanvas\Support\RichText::styles() !!}
         .canvas-native-fields .fi-fo-rich-editor-content{min-height:140px;max-height:320px;overflow-y:auto}
     </style>
-    <header class="fc-header" wire:ignore>
-        <div class="fc-heading">
-            <span class="fc-heading-icon"><x-filament::icon icon="heroicon-o-document" /></span>
-            <div>
-                <h2>{{ __('filament-canvas::canvas.visual_editor') }}</h2>
-                <p><span x-text="pageWidth.toLocaleString(@js(str_replace('_', '-', app()->getLocale())),{maximumFractionDigits:1})+' × '+pageHeight.toLocaleString(@js(str_replace('_', '-', app()->getLocale())),{maximumFractionDigits:1})+' pt'"></span> · <span x-text="messages.element_count.replace(':count', blocks.length)"></span></p>
-            </div>
-        </div>
-        <div class="fc-actions">
-            <x-filament::badge color="gray"><span aria-live="polite" x-text="saving ? @js(__('filament-canvas::canvas.saving')) : dirty ? @js(__('filament-canvas::canvas.unsaved_changes')) : @js(__('filament-canvas::canvas.all_saved'))"></span></x-filament::badge>
-            <div class="fc-history">
-                <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-left" label="{{ __('filament-canvas::canvas.undo') }}" title="{{ __('filament-canvas::canvas.undo') }}" @click="undo()" x-bind:disabled="saving || !undoStack.length" />
-                <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-right" label="{{ __('filament-canvas::canvas.redo') }}" title="{{ __('filament-canvas::canvas.redo') }}" @click="redo()" x-bind:disabled="saving || !redoStack.length" />
-            </div>
-            <x-filament::button type="button" icon="heroicon-o-check" @click="save($wire)" x-bind:disabled="saving || adding || !dirty" data-canvas-save>
-                <span x-text="saving ? @js(__('filament-canvas::canvas.saving')) : @js(__('filament-canvas::canvas.save_composition'))"></span>
-            </x-filament::button>
-        </div>
-    </header>
-    <div role="alert" x-cloak x-show="error" class="fc-error" wire:ignore>
-        <x-filament::icon icon="heroicon-o-exclamation-triangle" /><p x-text="error"></p>
-    </div>
     <div class="fc-layout" x-ref="workspace">
+        <header class="fc-header" wire:ignore>
+            <div class="fc-view-controls">
+                <x-filament::dropdown :menu="false" placement="bottom-start" shift size width="xs">
+                    <x-slot:trigger>
+                        <x-filament::icon-button type="button" color="gray" icon="heroicon-o-information-circle"
+                            label="{{ __('filament-canvas::canvas.shortcuts') }}"
+                            title="{{ __('filament-canvas::canvas.shortcuts') }}" />
+                    </x-slot:trigger>
+
+                    <div class="fc-help-content">
+                        <p>{{ __('filament-canvas::canvas.help_edit') }}</p>
+                        <p>{{ __('filament-canvas::canvas.help_zoom') }}</p>
+                        <p>{{ __('filament-canvas::canvas.help_shift') }}</p>
+                        <p>{{ __('filament-canvas::canvas.help_alt') }}</p>
+                        <p>{{ __('filament-canvas::canvas.help_ctrl') }}</p>
+                        <p>{{ __('filament-canvas::canvas.help_delete') }}</p>
+                        <p>{{ __('filament-canvas::canvas.help_esc') }}</p>
+                    </div>
+                </x-filament::dropdown>
+                <label class="fc-snap" title="{{ __('filament-canvas::canvas.grid') }}">
+                    <x-filament::icon icon="heroicon-o-squares-2x2" />
+                    <select aria-label="{{ __('filament-canvas::canvas.snap_pixels') }}" x-model.number="snapPixels">
+                        <option value="0">{{ __('filament-canvas::canvas.no_grid') }}</option>
+                        @foreach([1, 2, 5, 10, 20] as $pixels)
+                            <option value="{{ $pixels }}">{{ $pixels }} px</option>
+                        @endforeach
+                    </select>
+                </label>
+                <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrows-pointing-out" label="{{ __('filament-canvas::canvas.fit_screen') }}" title="{{ __('filament-canvas::canvas.fit_screen') }}" @click="fit()" />
+                @include('filament-canvas::partials.canvas-snap')
+                @include('filament-canvas::partials.canvas-zoom')
+            </div>
+            <div class="fc-actions">
+                <div class="fc-history">
+                    <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-left" label="{{ __('filament-canvas::canvas.undo') }}" title="{{ __('filament-canvas::canvas.undo') }}" @click="undo()" x-bind:disabled="saving || !undoStack.length" />
+                    <x-filament::icon-button type="button" color="gray" icon="heroicon-o-arrow-uturn-right" label="{{ __('filament-canvas::canvas.redo') }}" title="{{ __('filament-canvas::canvas.redo') }}" @click="redo()" x-bind:disabled="saving || !redoStack.length" />
+                </div>
+                <x-filament::button type="button" size="sm" @click="save($wire)" x-bind:disabled="saving || adding || !dirty" data-canvas-save>
+                    {{ __('filament-canvas::canvas.save_composition') }}
+                </x-filament::button>
+            </div>
+        </header>
+        <div role="alert" x-cloak x-show="error" class="fc-error fc-workspace-error" wire:ignore>
+            <x-filament::icon icon="heroicon-o-exclamation-triangle" /><p x-text="error"></p>
+        </div>
         <nav class="fc-toolbar" aria-label="{{ __('filament-canvas::canvas.add_elements') }}" wire:ignore>
             <ul class="canvas-toolbar-items">
                 @include('filament-canvas::partials.canvas-toolbar-groups')
@@ -74,22 +98,6 @@
             </div>
             </div>
             @include('filament-canvas::partials.canvas-inline-text')
-            <div class="fc-footer" wire:ignore>
-                <label class="fc-snap">
-                    <span>{{ __('filament-canvas::canvas.grid') }}</span>
-                    <x-filament::input.wrapper>
-                        <x-filament::input.select aria-label="{{ __('filament-canvas::canvas.snap_pixels') }}" x-model.number="snapPixels">
-                            <option value="0">{{ __('filament-canvas::canvas.no_grid') }}</option>
-                            @foreach([1, 2, 5, 10, 20] as $pixels)
-                                <option value="{{ $pixels }}">{{ $pixels }} px</option>
-                            @endforeach
-                        </x-filament::input.select>
-                    </x-filament::input.wrapper>
-                </label>
-                <x-filament::button type="button" color="gray" size="sm" icon="heroicon-o-arrows-pointing-out" @click="fit()">{{ __('filament-canvas::canvas.fit_screen') }}</x-filament::button>
-                @include('filament-canvas::partials.canvas-snap')
-                @include('filament-canvas::partials.canvas-zoom')
-            </div>
         </div>
         <aside :inert="Boolean(drawingSession?.creating)" class="fc-sidebar" aria-label="{{ __('filament-canvas::canvas.details_layers') }}">
             <div class="fc-tabs" wire:ignore>
@@ -149,18 +157,6 @@
             </div>
         </aside>
     </div>
-    <details class="fc-help" x-ref="help" @toggle="resizeEditorViewport()">
-        <summary><x-filament::icon icon="heroicon-o-information-circle" />{{ __('filament-canvas::canvas.shortcuts') }}</summary>
-        <div class="fc-help-content">
-            <p>{{ __('filament-canvas::canvas.help_edit') }}</p>
-            <p>{{ __('filament-canvas::canvas.help_zoom') }}</p>
-            <p>{{ __('filament-canvas::canvas.help_shift') }}</p>
-            <p>{{ __('filament-canvas::canvas.help_alt') }}</p>
-            <p>{{ __('filament-canvas::canvas.help_ctrl') }}</p>
-            <p>{{ __('filament-canvas::canvas.help_delete') }}</p>
-            <p>{{ __('filament-canvas::canvas.help_esc') }}</p>
-        </div>
-    </details>
 </div>
     @if ($errors->any())
         <div role="alert" class="fc-error"><x-filament::icon icon="heroicon-o-exclamation-triangle" /><p>{{ $errors->first() }}</p></div>
