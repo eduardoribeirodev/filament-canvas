@@ -20,6 +20,7 @@ return [
     'drawing' => 'Drawing',
     'table' => 'Table',
     'font_size' => 'Font size',
+    'font_family' => 'Font family',
     'color' => 'Color',
     'line_height' => 'Line height',
     'background_color' => 'Background color',

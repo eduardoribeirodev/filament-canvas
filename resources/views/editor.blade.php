@@ -1,7 +1,7 @@
 <div class="canvas-livewire-shell">
 <div class="fc-editor"
     x-load x-load-src="{{ \Filament\Support\Facades\FilamentAsset::getAlpineComponentSrc('canvas', 'eduardoribeirodev/filament-canvas') }}"
-    x-data="canvas(@js($initial), @js($assets), @js($width), @js($height), @js($previewHtml), {labels: @js($elementLabels), elementTypes: @js($elementTypes), templates: @js($elementTemplates), data: @js($metadata), messages: @js(__('filament-canvas::canvas')), minZoom: @js(config('filament-canvas.min_zoom', 0.25)), maxZoom: @js(config('filament-canvas.max_zoom', 3)), fitViewport: true})"
+    x-data="canvas(@js($initial), @js($assets), @js($width), @js($height), @js($previewHtml), {labels: @js($elementLabels), elementTypes: @js($elementTypes), templates: @js($elementTemplates), data: @js($metadata), messages: @js(__('filament-canvas::canvas')), minZoom: @js(config('filament-canvas.min_zoom', 0.25)), maxZoom: @js(config('filament-canvas.max_zoom', 3)), fonts: @js(config('filament-canvas.fonts')), fitViewport: true})"
     wire:ignore.self x-bind:aria-busy="saving"
     @pointerdown.window.capture="finishInlineEditing($event)" @scroll.window="positionInlineEditor()"
     @canvas-rich-text-change.stop="applyRichText($event.detail,$event.detail.key)"
@@ -12,6 +12,7 @@
     @canvas-reference-selected.stop="selectReference($event.detail.id,$event.detail.key)"
     @filament-canvas-add-element.window="addFromEvent($event)"
 >
+    @include('filament-canvas::partials.font-stylesheet')
     <style>
         {!! \EduardoRibeiroDev\FilamentCanvas\Support\RichText::styles() !!}
         .canvas-native-fields .fi-fo-rich-editor-content{min-height:140px;max-height:320px;overflow-y:auto}

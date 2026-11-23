@@ -20,6 +20,7 @@ return [
     'drawing' => 'Disegno',
     'table' => 'Tabella',
     'font_size' => 'Dimensione carattere',
+    'font_family' => 'Carattere',
     'color' => 'Colore',
     'line_height' => 'Altezza riga',
     'background_color' => 'Colore di sfondo',

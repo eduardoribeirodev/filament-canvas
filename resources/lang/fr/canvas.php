@@ -20,6 +20,7 @@ return [
     'drawing' => 'Dessin',
     'table' => 'Tableau',
     'font_size' => 'Taille de police',
+    'font_family' => 'Police',
     'color' => 'Couleur',
     'line_height' => 'Hauteur de ligne',
     'background_color' => 'Couleur de fond',

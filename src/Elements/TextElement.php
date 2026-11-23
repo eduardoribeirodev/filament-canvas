@@ -6,6 +6,7 @@ use EduardoRibeiroDev\FilamentCanvas\Forms\Components\RichTextEditor;
 use EduardoRibeiroDev\FilamentCanvas\Support\RichText;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -38,6 +39,8 @@ class TextElement extends CanvasElement
 
     public function form(Schema $schema): Schema
     {
+        $fonts = config('filament-canvas.fonts');
+
         return $schema->components([
             $this->textField(),
             TextInput::make('font_size')
@@ -47,6 +50,12 @@ class TextElement extends CanvasElement
                 ->maxValue(100)
                 ->default($this->name === 'title' ? 24 : 12)
                 ->suffix('pt'),
+            Select::make('font_family')
+                ->label(__('filament-canvas::canvas.font_family'))
+                ->placeholder(null)
+                ->selectablePlaceholder(false)
+                ->options($fonts)
+                ->default(array_key_first($fonts)),
             TextInput::make('leading')
                 ->label(__('filament-canvas::canvas.line_height'))
                 ->numeric()
@@ -139,6 +148,12 @@ class TextElement extends CanvasElement
 
     public function normalize(array $properties): array
     {
+        $fonts = config('filament-canvas.fonts');
+        $fontFamily = $properties['font_family'] ?? null;
+        if (! is_string($fontFamily) || ! array_key_exists($fontFamily, $fonts)) {
+            $properties['font_family'] = array_key_first($fonts);
+        }
+
         return RichText::normalize($properties);
     }
 }

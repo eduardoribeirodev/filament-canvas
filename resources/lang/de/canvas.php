@@ -20,6 +20,7 @@ return [
     'drawing' => 'Zeichnung',
     'table' => 'Tabelle',
     'font_size' => 'Schriftgröße',
+    'font_family' => 'Schriftart',
     'color' => 'Farbe',
     'line_height' => 'Zeilenhöhe',
     'background_color' => 'Hintergrundfarbe',

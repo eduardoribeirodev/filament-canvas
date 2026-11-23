@@ -58,7 +58,7 @@ class PersistenceTest extends TestCase
         $element = $owner->canvasElements()->first();
         $this->assertInstanceOf(CanvasElement::class, $element);
         $this->assertTrue($owner->is($element->elementable));
-        $this->assertSame(['text' => 'Primeiro', 'font_size' => 16, 'rich_text' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'Primeiro']]]]], 'html' => '<p style="text-align: center;">Primeiro</p>'], $element->properties);
+        $this->assertSame(['text' => 'Primeiro', 'font_size' => 16, 'rich_text' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'Primeiro']]]]], 'font_family' => 'Arial, sans-serif', 'html' => '<p style="text-align: center;">Primeiro</p>'], $element->properties);
         $reordered = $store->save($context, array_reverse($result->blocks), $result->revision);
         $this->assertSame(['Segundo', 'Primeiro'], array_column(array_column($reordered->blocks, 'data'), 'name'));
         $remaining = $store->save($context, [$reordered->blocks[0]], $reordered->revision);

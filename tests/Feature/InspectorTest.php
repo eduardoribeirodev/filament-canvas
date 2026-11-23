@@ -71,6 +71,37 @@ class InspectorTest extends TestCase
         $this->assertStringContainsString('maxValue: maxZoom * 100', $html);
     }
 
+    public function test_text_inspector_uses_project_fonts_and_persists_the_selected_family(): void
+    {
+        $brandFont = '"Brand Sans", sans-serif';
+        $stylesheet = 'https://assets.example.test/canvas-fonts.css';
+        config([
+            'filament-canvas.fonts' => ['Georgia, serif' => 'Georgia', $brandFont => 'Brand Sans'],
+            'filament-canvas.font_stylesheet' => $stylesheet,
+        ]);
+        $document = $this->dynamicElementInspectorPrepareEditor();
+        Filament::getCurrentPanel()->getPlugin('filament-canvas')->documentElements('test-document', ['text', 'title']);
+        $data = $this->filamentPackagesElementData();
+        unset($data['type'], $data['layer']);
+        $block = ['type' => 'title', 'data' => $data];
+        $editor = $this->dynamicElementInspectorEditor($document)
+            ->call('selectInspector', 'title', 'title', $block, 1)
+            ->assertHasNoErrors();
+        $this->assertSame('Georgia, serif', $editor->get('inspectorData.font_family'));
+        $this->assertSame(config('filament-canvas.fonts'), $editor->instance()->getSchemaComponent('propertiesForm.font_family')->getOptions());
+        $this->assertStringContainsString($stylesheet, $editor->html());
+
+        $values = $editor->get('inspectorData');
+        $values['font_family'] = $brandFont;
+        $editor->call('updateInspector', $values, 'title', 1, 1, $block)->assertHasNoErrors();
+        $this->assertSame($brandFont, $editor->effects['returns'][0]['patch']['font_family']);
+
+        $block['data']['properties']['font_family'] = $brandFont;
+        $editor->call('save', [$block])->assertHasNoErrors();
+        $this->assertSame($brandFont, $document->canvasElements()->firstOrFail()->properties['font_family']);
+        $this->assertStringContainsString($stylesheet, $editor->instance()->preview([$block]));
+    }
+
     public function test_native_repeater_actions_resolve_the_properties_schema_and_preserve_unsaved_state(): void
     {
         $edition = $this->dynamicElementInspectorPrepareEditor();
@@ -272,7 +303,7 @@ class InspectorTest extends TestCase
         $blocks = [['type' => 'text', 'data' => $this->filamentPackagesElementData()]];
         unset($blocks[0]['data']['type'], $blocks[0]['data']['layer']);
         $canonical = $blocks;
-        $canonical[0]['data']['properties'] += ['rich_text' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'Text original']]]]], 'html' => '<p style="text-align: center;">Text original</p>'];
+        $canonical[0]['data']['properties'] += ['rich_text' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'attrs' => ['textAlign' => 'center'], 'content' => [['type' => 'text', 'text' => 'Text original']]]]], 'font_family' => 'Arial, sans-serif', 'html' => '<p style="text-align: center;">Text original</p>'];
         $saved = $canonical;
         $saved[0]['data']['id'] = 'external-node';
         $store = Mockery::mock(DocumentStore::class);

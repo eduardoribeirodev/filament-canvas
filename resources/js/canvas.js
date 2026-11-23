@@ -107,6 +107,7 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
     if (!Number.isFinite(minZoom) || !Number.isFinite(maxZoom) || minZoom <= 0 || maxZoom <= minZoom) {
         throw new RangeError('Canvas zoom limits must be positive numbers with maxZoom greater than minZoom.');
     }
+    const fonts = options.fonts, firstFont = Object.keys(fonts ?? {})[0];
     const state = {
         ...drawingTools,
         blocks: JSON.parse(JSON.stringify(initial)), documentData: options.data || {}, assets, pageWidth: Number(pageWidth), pageHeight: Number(pageHeight), previewHtml, selected: null,
@@ -505,9 +506,14 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
             return {position:'fixed',left:(rect.left+Number(d.x_pt)*this.zoom)+'px',top:(rect.top+Number(d.y_pt)*this.zoom)+'px',width:Number(d.width_pt)*this.zoom+'px',height:Number(d.height_pt)*this.zoom+'px',fontSize:Number(c.font_size ?? (block.type==='title'?24:12))*this.zoom+'px',color:richColor(c.color)||'#111111',visibility:this.isTextEditorReady(block)?'visible':'hidden',zIndex:'40'};
         },
         textEditorHtml(block) { return this.isTextEditing(block)?this.textEditing.html:this.textHtml(block); },
+        textFontFamily(block) {
+            const family = block.data.properties?.font_family;
+            if (fonts && !Object.hasOwn(fonts, family)) return firstFont;
+            return typeof family === 'string' ? family : undefined;
+        },
         textEditorStyle(block) {
             const c=block.data.properties || {},previewNode=this.previewNodes.get(block._key);
-            const fontFamily=previewNode?.ownerDocument?.defaultView?.getComputedStyle?.(previewNode)?.fontFamily || 'Arial,sans-serif';
+            const fontFamily=this.textFontFamily(block) || previewNode?.ownerDocument?.defaultView?.getComputedStyle?.(previewNode)?.fontFamily || 'Arial,sans-serif';
             return {fontSize:this.inlineEditorStyle().fontSize,color:this.inlineEditorStyle().color,minHeight:Number(block.data.height_pt)*this.zoom+'px',fontWeight:'400',fontStyle:'normal',fontFamily,lineHeight:String(Math.max(.5,Math.min(10,Number(c.leading??1.25)))),textAlign:'left',columnCount:Math.max(1,Math.min(12,Math.trunc(Number(c.columns??1)))),backgroundColor:previewNode?.querySelector('.canvas-rich-text')?'transparent':richColor(c.background_color)||'transparent',padding:Math.max(0,Math.min(100,Number(c.padding)||0))*this.zoom+'px',borderRadius:Math.max(0,Math.min(100,Number(c.border_radius)||0))*this.zoom+'px',whiteSpace:'pre-wrap',transform:`rotate(${-Number(block.data.rotation_deg || 0)}deg)`,transformOrigin:`${Number(block.data.width_pt)*this.zoom/2}px ${Number(block.data.height_pt)*this.zoom/2}px`};
         },
         positionInlineEditor() {
@@ -912,6 +918,10 @@ export default function createCanvas(initial = [], assets = [], pageWidth = 595.
                 text:c.text ?? '',html:this.textHtml(b),image_url:this.safeImageUrl(this.image(b)),columns:c.columns ?? [],rows:c.rows ?? []};
             try {data.link_url=['http:', 'https:'].includes(new URL(c.link_url).protocol)?c.link_url:'';} catch {data.link_url='';}
             data.text_style={textAlign:'left',fontWeight:400,fontStyle:'normal',lineHeight:Math.max(.5,Math.min(10,Number(c.leading ?? 1.25))),columnCount:Math.max(1,Math.min(12,Math.trunc(Number(c.columns ?? 1)))),backgroundColor:/^#[a-f\d]{3,8}$/i.test(c.background_color || '')?c.background_color:'transparent',padding:Math.max(0,Math.min(100,Number(c.padding)||0))+'pt',borderRadius:Math.max(0,Math.min(100,Number(c.border_radius)||0))+'pt'};
+            const fontFamily = this.isText(b) ? this.textFontFamily(b) : undefined;
+            if (fontFamily) {
+                data.text_style.fontFamily = fontFamily;
+            }
             const t=c.image_transform;
             data.image_style=t?{position:'absolute',left:Number(t.x)+'pt',top:Number(t.y)+'pt',width:Number(t.width)+'pt',height:Number(t.height)+'pt',maxWidth:'none',objectFit:'fill',transform:`rotate(${-Number(t.rotation)}deg) scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`}:{objectFit:c.fit==='cover'?'cover':'contain',objectPosition:`${Number(c.crop_x??.5)*100}% ${Number(c.crop_y??.5)*100}%`,transform:`scale(${c.flip_x?-1:1},${c.flip_y?-1:1})`};
             const drawing=c.drawing || {},number=(key,fallback,min,max)=>drawing[key]!=null&&drawing[key]!==''&&Number.isFinite(Number(drawing[key]))?Math.max(min,Math.min(max,Number(drawing[key]))):fallback;

@@ -474,6 +474,7 @@ function plainDocument(text) {
 function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight = 841.89, previewHtml = "", options = {}) {
 	const minZoom = Number(options.minZoom ?? .25), maxZoom = Number(options.maxZoom ?? 3);
 	if (!Number.isFinite(minZoom) || !Number.isFinite(maxZoom) || minZoom <= 0 || maxZoom <= minZoom) throw new RangeError("Canvas zoom limits must be positive numbers with maxZoom greater than minZoom.");
+	const fonts = options.fonts, firstFont = Object.keys(fonts ?? {})[0];
 	return {
 		...drawingTools,
 		blocks: JSON.parse(JSON.stringify(initial)),
@@ -1153,9 +1154,14 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 		textEditorHtml(block) {
 			return this.isTextEditing(block) ? this.textEditing.html : this.textHtml(block);
 		},
+		textFontFamily(block) {
+			const family = block.data.properties?.font_family;
+			if (fonts && !Object.hasOwn(fonts, family)) return firstFont;
+			return typeof family === "string" ? family : void 0;
+		},
 		textEditorStyle(block) {
 			const c = block.data.properties || {}, previewNode = this.previewNodes.get(block._key);
-			const fontFamily = previewNode?.ownerDocument?.defaultView?.getComputedStyle?.(previewNode)?.fontFamily || "Arial,sans-serif";
+			const fontFamily = this.textFontFamily(block) || previewNode?.ownerDocument?.defaultView?.getComputedStyle?.(previewNode)?.fontFamily || "Arial,sans-serif";
 			return {
 				fontSize: this.inlineEditorStyle().fontSize,
 				color: this.inlineEditorStyle().color,
@@ -2063,6 +2069,8 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				padding: Math.max(0, Math.min(100, Number(c.padding) || 0)) + "pt",
 				borderRadius: Math.max(0, Math.min(100, Number(c.border_radius) || 0)) + "pt"
 			};
+			const fontFamily = this.isText(b) ? this.textFontFamily(b) : void 0;
+			if (fontFamily) data.text_style.fontFamily = fontFamily;
 			const t = c.image_transform;
 			data.image_style = t ? {
 				position: "absolute",

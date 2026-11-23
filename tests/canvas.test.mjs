@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import createCanvas from '../resources/js/canvas.js';
+import {prepareDisplayData} from '../resources/js/display.js';
 
 const element=(type='text')=>({type,data:{name:'Exemplo',x_pt:10,y_pt:10,width_pt:100,height_pt:50,rotation_deg:0,visible:true,properties:{text:'<Teste>',font_size:12}}});
 
@@ -37,6 +38,23 @@ test('text columns and hyperlinks remain safe in the local preview',()=>{
  assert.equal(state.viewData(state.current).text_style.lineHeight,1.6);assert.equal(state.viewData(state.current).text_style.columnCount,2);
  assert.equal(state.viewData(state.current).link_url,'https://example.test/?q="quoted"');
  state.current.data.properties.link_url='javascript:alert(1)';assert.equal(state.viewData(state.current).link_url,'');
+});
+
+test('project fonts reach the editor preview, inline editor and exported document', () => {
+    const firstFont = 'Georgia, serif', brandFont = '"Brand Sans", sans-serif';
+    const state = createCanvas([element()], [], 500, 400, '', {
+        fonts: {[firstFont]: 'Georgia', [brandFont]: 'Brand Sans'},
+    });
+    state.prepare();
+    const [block] = state.blocks;
+    const editorFonts = () => [state.viewData(block).text_style.fontFamily, state.textEditorStyle(block).fontFamily];
+
+    assert.deepEqual(editorFonts(), [firstFont, firstFont]);
+    block.data.properties.font_family = brandFont;
+    assert.deepEqual(editorFonts(), [brandFont, brandFont]);
+    assert.equal(prepareDisplayData({...block.data.properties, type: block.type, element_kind: 'text'}).text_style.fontFamily, brandFont);
+    block.data.properties.font_family = 'Removed Font';
+    assert.deepEqual(editorFonts(), [firstFont, firstFont]);
 });
 
 test('named image elements inherit preview and crop capabilities',()=>{

@@ -234,7 +234,7 @@ Use an existing, saved record. The canvas has its own **Save composition** actio
 | Class | Type | Includes |
 | --- | --- | --- |
 | `TitleElement` | `title` | Rich text with heading defaults and inline editing. |
-| `TextElement` | `text` | Rich text, font size, colors, spacing, columns and links. |
+| `TextElement` | `text` | Rich text, font family, font size, colors, spacing, columns and links. |
 | `ImageElement` | `asset` | Media selection, cropping, image fit, opacity and flipping. |
 | `DrawingElement` | `drawing` | Click to place points, drag points, close paths, edit stroke and fill. |
 | `LineElement` | `line` | Start/end coordinates and solid, dashed or dotted strokes. |
@@ -476,6 +476,7 @@ You can override `view()` or extend `form()` to add fields. Extending `CanvasEle
 
 - Use the toolbar to insert an element, then drag it or use the resize and rotation handles.
 - Edit content and appearance in **Properties**. Position and dimensions are managed separately from element properties.
+- Choose a font for a text or title block in **Properties**.
 - Double-click a text element to edit it in place. Use the floating toolbar for formatting.
 - Open **Layers** to select and reorder elements. Visibility and duplication are available in the attributes panel.
 - Use the grid, snapping controls, zoom and **Fit to screen** to work at different scales.
@@ -485,6 +486,20 @@ You can override `view()` or extend `form()` to add fields. Extending `CanvasEle
 ![Inline rich text editing with the native formatting toolbar](docs/images/text-editing.png)
 
 ## Advanced Features
+
+### Text Fonts
+
+Set `fonts` in `config/filament-canvas.php` to a non-empty map of CSS font stacks to labels. The first entry is assigned explicitly to new text and title blocks and to existing blocks whose font is missing or has been removed from the list.
+
+```php
+'fonts' => [
+    '"Brand Sans", sans-serif' => 'Brand Sans',
+    'Georgia, serif' => 'Georgia',
+],
+'font_stylesheet' => 'https://assets.example.com/canvas-fonts.css',
+```
+
+Use `font_stylesheet` to load project fonts in the editor, preview and exported HTML. Define the families in that stylesheet with `@font-face` and make the stylesheet and font files accessible to the browser and export renderer. Use an absolute stylesheet URL so standalone documents can load it, and configure CORS on the font host as needed.
 
 ### Media Collections
 
