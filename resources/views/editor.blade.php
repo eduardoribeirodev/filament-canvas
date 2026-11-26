@@ -8,7 +8,7 @@
     @canvas-rich-text-ready="syncInspector()"
     @canvas-inspector-ready.stop="syncInspector()"
     @canvas-asset-created.stop="selectCreatedAsset($event.detail.asset,$event.detail.key,$event.detail.collection)"
-    @canvas-asset-selected.stop="selectAsset($event.detail.id,$event.detail.key,$event.detail.collection)"
+    @canvas-asset-selected.stop="selectLibraryAsset($event.detail.id,$event.detail.key,$event.detail.collection)"
     @canvas-reference-selected.stop="selectReference($event.detail.id,$event.detail.key)"
     @unless($readOnly)
         @filament-canvas-add-element.window="addFromEvent($event)"

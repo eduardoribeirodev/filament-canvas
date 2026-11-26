@@ -977,30 +977,69 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			const policies = this.mediaCollections(block);
 			return name ? policies.find((policy) => policy.name === name) : policies[0];
 		},
+		assetRequests: /* @__PURE__ */ new Map(),
 		selectAsset(id, key = this.current?._key, collection = null) {
-			if (this.saving || String(this.current?._key) !== String(key)) return;
-			const policy = this.mediaCollection(this.current, collection);
+			if (String(this.current?._key) !== String(key)) return;
+			this.applyAssetSelection(this.current, id, collection);
+		},
+		applyAssetSelection(block, id, collection) {
+			if (this.saving) return;
+			const policy = this.mediaCollection(block, collection);
 			if (!policy) return;
 			const ids = Array.isArray(id) ? id : id === null || id === "" ? [] : [id];
 			if (ids.length > policy.max_files || new Set(ids.map(String)).size !== ids.length) return;
 			const assets = ids.map((value) => this.assets.find((asset) => String(asset.id) === String(value)));
 			if (assets.some((asset) => !asset)) return;
-			const block = this.current, value = policy.max_files > 1 ? assets.map((asset) => asset.id) : assets[0]?.id ?? null;
+			const value = policy.max_files > 1 ? assets.map((asset) => asset.id) : assets[0]?.id ?? null;
 			if (JSON.stringify(block.data[policy.reference_field] ?? null) === JSON.stringify(value)) return;
 			this.checkpoint();
 			block.data[policy.reference_field] = value;
 			if (policy.reference_field === "image_id") block.data.image_url = assets[0] ? this.safeImageUrl(assets[0].image) : "";
 			if (Object.hasOwn(block.data.properties, "image_transform")) block.data.properties.image_transform = null;
-			this.inspectorSignature = JSON.stringify(block.data.properties);
-			this.cropIndex = null;
-			this.syncInspector();
+			if (block === this.current) {
+				this.inspectorSignature = JSON.stringify(block.data.properties);
+				this.cropIndex = null;
+				this.syncInspector();
+			}
 			this.syncPreview();
+		},
+		async selectLibraryAsset(id, key, collection) {
+			const block = this.current;
+			if (this.saving || !block || String(block._key) !== String(key)) return;
+			const policy = this.mediaCollection(block, collection);
+			if (!policy) return;
+			const ids = Array.isArray(id) ? id : id === null || id === "" ? [] : [id];
+			if (ids.length > policy.max_files || new Set(ids.map(String)).size !== ids.length) return;
+			const requestKey = JSON.stringify([String(key), policy.name]);
+			const missing = ids.filter((value) => !this.assets.some((asset) => String(asset.id) === String(value)));
+			if (!missing.length) {
+				this.assetRequests.delete(requestKey);
+				this.applyAssetSelection(block, id, collection);
+				return;
+			}
+			const request = this.$wire.resolveSelectedAssets(missing, policy.name);
+			this.assetRequests.set(requestKey, request);
+			try {
+				const assets = await request;
+				if (this.destroyed || this.assetRequests.get(requestKey) !== request || !this.blocks.includes(block)) return;
+				if (assets.length !== missing.length) {
+					if (block === this.current) this.syncInspector();
+					return;
+				}
+				for (const asset of assets) if (!this.assets.some((item) => String(item.id) === String(asset.id))) this.assets.push(asset);
+				this.applyAssetSelection(block, id, collection);
+			} catch {
+				if (this.assetRequests.get(requestKey) === request && block === this.current) this.syncInspector();
+			} finally {
+				if (this.assetRequests.get(requestKey) === request) this.assetRequests.delete(requestKey);
+			}
 		},
 		selectCreatedAsset(asset, key, collection) {
 			if (!this.assets.some((item) => String(item.id) === String(asset.id))) this.assets.push(asset);
 			if (String(this.current?._key) !== String(key)) return;
 			const policy = this.mediaCollection(this.current, collection);
 			if (!policy) return;
+			this.assetRequests.delete(JSON.stringify([String(key), policy.name]));
 			if (policy.max_files === 1) {
 				this.selectAsset(asset.id, key, collection);
 				return;
@@ -1024,11 +1063,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 				const result = await wire.uploadAsset(policy.name);
 				if (this.destroyed) return;
 				if (!result?.asset) throw new Error("Media upload did not return an asset.");
-				if (Array.isArray(result?.assets)) this.assets = result.assets;
-				else if (result?.asset) {
-					this.assets = this.assets.filter((asset) => String(asset.id) !== String(result.asset.id));
-					this.assets.push(result.asset);
-				}
+				for (const asset of result.assets || result.inserted || [result.asset]) if (!this.assets.some((item) => String(item.id) === String(asset.id))) this.assets.push(asset);
 				if (String(this.current?._key) === String(key)) {
 					const ids = (result.inserted || [result.asset]).map((asset) => asset.id);
 					this.selectAsset(policy.max_files > 1 ? ids : ids[0], key, policy.name);
@@ -1911,6 +1946,7 @@ function createCanvas(initial = [], assets = [], pageWidth = 595.28, pageHeight 
 			if (options.readOnly || this.saving || this.imageUploading || this.adding) return;
 			if (this.drawingSession && !this.finishDrawing()) return;
 			if (this.textEditing) this.commitTextEditing();
+			while (this.assetRequests.size) await Promise.allSettled([...this.assetRequests.values()]);
 			await this.flushInspector();
 			if (this.inspectorInvalid || this.saving || this.adding) return;
 			this.saving = true;

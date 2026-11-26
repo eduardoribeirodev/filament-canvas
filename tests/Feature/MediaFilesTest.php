@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class MediaFilesTest extends TestCase
 {
@@ -42,6 +43,22 @@ class MediaFilesTest extends TestCase
         $this->get($url)->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
         $this->actingAs((new User)->forceFill(['id' => 2]));
         $this->get($url)->assertForbidden();
+    }
+
+    public function test_preview_can_serve_a_private_conversion_and_omit_missing_conversions(): void
+    {
+        $media = PreviewMediaDocument::create()
+            ->addMedia(UploadedFile::fake()->image('large.png', 900, 600))
+            ->toMediaCollection('private', 'canvas-private');
+
+        $url = MediaFiles::url($media, previewConversion: 'small', fallbackToOriginal: false);
+        $response = $this->get($url)->assertOk()->baseResponse;
+        $this->assertSame($media->getPath('small'), $response->getFile()->getPathname());
+
+        unlink($media->getPath('small'));
+        $this->assertNull(MediaFiles::url($media, previewConversion: 'small', fallbackToOriginal: false));
+        $response = $this->get(MediaFiles::url($media, previewConversion: 'small'))->assertOk()->baseResponse;
+        $this->assertSame($media->getPath(), $response->getFile()->getPathname());
     }
 
     public function test_tampered_and_expired_urls_are_rejected(): void
@@ -85,5 +102,13 @@ class MediaFilesTest extends TestCase
         $this->assertFileExists($path);
         $this->assertSame([200, 133], array_slice(getimagesize($path), 0, 2));
         $this->assertSame($url, MediaFiles::renderUrl($media->getPath(), ['pdf_max_dimension' => 200], false, $cache));
+    }
+}
+
+class PreviewMediaDocument extends TestDocument
+{
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('small')->width(120)->nonQueued();
     }
 }

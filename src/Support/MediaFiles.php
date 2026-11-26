@@ -35,19 +35,38 @@ class MediaFiles
         return null;
     }
 
-    public static function url(?Media $media, ?EditorContext $context = null): ?string
+    public static function url(
+        ?Media $media,
+        ?EditorContext $context = null,
+        ?string $previewConversion = null,
+        bool $fallbackToOriginal = true,
+    ): ?string
     {
         if ($media === null) {
             return null;
         }
-        if (config('filesystems.disks.'.$media->disk.'.visibility') === 'public') {
-            return $media->getUrl();
-        }
-        if (config('filesystems.disks.'.$media->disk.'.driver') !== 'local') {
-            return $media->getTemporaryUrl(now()->addMinutes(30));
+        $conversion = '';
+        $disk = $media->disk;
+        if ($previewConversion !== null && $media->hasGeneratedConversion($previewConversion)) {
+            $conversionDisk = $media->conversions_disk ?: $disk;
+            if (config('filesystems.disks.'.$conversionDisk.'.driver') !== 'local' || is_file($media->getPath($previewConversion))) {
+                $conversion = $previewConversion;
+                $disk = $conversionDisk;
+            }
         }
 
-        return self::fileUrl($media->getPath(), $context);
+        if ($previewConversion !== null && $conversion === '' && ! $fallbackToOriginal) {
+            return null;
+        }
+
+        if (config('filesystems.disks.'.$disk.'.visibility') === 'public') {
+            return $media->getUrl($conversion);
+        }
+        if (config('filesystems.disks.'.$disk.'.driver') !== 'local') {
+            return $media->getTemporaryUrl(now()->addMinutes(30), $conversion);
+        }
+
+        return self::fileUrl($media->getPath($conversion), $context);
     }
 
     private static function fileUrl(string $path, ?EditorContext $context): ?string

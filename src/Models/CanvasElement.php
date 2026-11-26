@@ -71,16 +71,19 @@ class CanvasElement extends Model implements HasMedia
     {
         $data = $this->only(['id', 'name', 'x_pt', 'y_pt', 'width_pt', 'height_pt', 'rotation_deg', 'visible', 'properties']);
         $definition = CanvasElements::resolve(CanvasElements::forOwner($this->canvasOwner()), $this->type);
-        if ($definition instanceof HasElementMedia) {
-            foreach ($definition->mediaCollections() as $name => $collection) {
-                $multiple = ($collection['max_files'] ?? 1) > 1;
-                $items = $this->getMedia($name === 'image' ? 'image' : $name);
-                data_set($data, $collection['reference_field'] ?? 'image_id', $multiple ? $items->modelKeys() : $items->first()?->id);
-            }
+        $collections = $definition instanceof HasElementMedia ? $definition->mediaCollections() : [];
+        foreach ($collections as $name => $collection) {
+            $multiple = ($collection['max_files'] ?? 1) > 1;
+            $items = $this->getMedia($name);
+            data_set($data, $collection['reference_field'] ?? 'image_id', $multiple ? $items->modelKeys() : $items->first()?->id);
         }
         $image = $definition instanceof HasElementMedia ? $this->image() : null;
         $data['image_id'] ??= $image?->id;
-        $data['image_url'] = MediaFiles::url($image) ?? ($this->properties['image_url'] ?? null);
+        $data['image_url'] = MediaFiles::url(
+            $image,
+            previewConversion: $collections['image']['preview_conversion'] ?? null,
+            fallbackToOriginal: $collections['image']['preview_conversion_fallback'] ?? true,
+        ) ?? ($this->properties['image_url'] ?? null);
 
         return $data;
     }

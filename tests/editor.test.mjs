@@ -303,6 +303,24 @@ import { default as createCanvas, renderRichDocument, plainRichDocument } from '
         state.undo();state.selected=0;assert.equal(state.current.data.properties.image_transform.x,-10);
     });
 
+    test('library selection fetches missing assets and ignores a superseded result',async()=>{
+        const state=createCanvas([],[],500,400,'');state.add('asset');
+        const key=state.current._key, requests=new Map();
+        state.$wire={resolveSelectedAssets:([id],collection)=>new Promise(resolve=>{
+            assert.equal(collection,'image');
+            requests.set(id,resolve);
+        })};
+        const first=state.selectLibraryAsset(7,key,'image');
+        const second=state.selectLibraryAsset(8,key,'image');
+        requests.get(8)([{id:8,image:'/media/eight.png'}]);
+        await second;
+        requests.get(7)([{id:7,image:'/media/seven.png'}]);
+        await first;
+        assert.equal(state.current.data.image_id,8);
+        assert.equal(state.current.data.image_url,'/media/eight.png');
+        assert.deepEqual(state.assets.map(asset=>asset.id),[8]);
+    });
+
     test('uploading adds the returned asset without changing an element selected after upload began',async()=>{
         const state=editor();state.add('asset');const first=state.current._key;
         let finish,calls=0;

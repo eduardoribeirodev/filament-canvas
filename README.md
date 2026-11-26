@@ -541,7 +541,7 @@ public function mediaCollections(): array
 
 The media library validates file access and references before saving. Uploads use the owning document by default, so it must implement Spatie's `HasMedia` contract. Private media uses signed, authenticated file URLs.
 
-Collections can customize `disk`, `query`, `authorize`, `upload_owner` and `upload_collection`. Use these when media belongs to a different model or needs application-specific access rules. The package prepares browser or output URLs from the saved media references; element views bind to the resulting data.
+Collections can customize `disk`, `query`, `authorize`, `upload_owner` and `upload_collection`. Use these when media belongs to a different model or needs application-specific access rules. The package prepares browser or output URLs from the saved media references; element views bind to the resulting data. Set `preview_conversion` to the name of a Spatie conversion to use it in the editor and the media picker when available. The package falls back to the source file when the conversion is missing. Set `preview_conversion_fallback` to `false` to omit the preview URL in that case.
 
 ### Page Templates and Output
 

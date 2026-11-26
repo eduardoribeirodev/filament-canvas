@@ -404,9 +404,8 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
                 ->allowHtml()
                 ->optionsLimit(100)
                 ->searchDebounce(250)
-                ->options(fn() => $this->assetOptions('', $name))
                 ->getSearchResultsUsing(fn(string $search) => $this->assetOptions($search, $name))
-                ->getOptionLabelUsing(fn($value) => $this->assetOptions('', $name)[$value] ?? null)
+                ->getOptionLabelUsing(fn($value) => $this->assetLabels([$value], $name)[$value] ?? null)
                 ->extraAlpineAttributes([
                     'data-canvas-image-select' => 'true',
                     'data-canvas-media-collection' => $name,
@@ -417,7 +416,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             if ($collection['max_files'] > 1) {
                 $field->multiple()
                     ->maxItems($collection['max_files'])
-                    ->getOptionLabelsUsing(fn(array $values) => array_intersect_key($this->assetOptions('', $name), array_flip($values)));
+                    ->getOptionLabelsUsing(fn(array $values) => $this->assetLabels($values, $name));
             }
             if ($element instanceof HasElementMedia && ($context->document instanceof HasMedia || isset($element->mediaCollections()[$name]['upload_owner']))) {
                 $field->createOptionForm([$this->mediaUploadField('file', $collection)->required()])
@@ -512,20 +511,67 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
 
     public function assetOptions(string $search = '', ?string $collection = null): array
     {
-        $policy = collect($this->elementMediaCollections())->first(fn($item) => $collection === null || $item['name'] === $collection);
+        $context = $this->context();
+        $plugin = $this->plugin();
+        $plugin->resolveDocumentStore($this->documentType)->authorize($context, 'view');
+        if ($this->inspectorType === null) {
+            return [];
+        }
+
+        $element = CanvasElements::resolve($plugin->elements($this->documentType), $this->inspectorType);
+        $collection ??= $this->elementMediaCollections()[0]['name'] ?? null;
+        if (! $element instanceof HasElementMedia || ! isset($element->mediaCollections()[$collection])) {
+            return [];
+        }
+
         $options = [];
-        foreach ($this->inspectorAssets($policy['name'] ?? null) as $asset) {
-            if ($search !== '' && ! str_contains(mb_strtolower((string) ($asset['name'] ?? '')), mb_strtolower($search))) {
-                continue;
-            }
-            $mime = $asset['mime_type'] ?? null;
-            if ($mime !== null && $policy !== null && ! collect($policy['accepted_mime_types'])->contains(fn($accepted) => $accepted === $mime || (str_ends_with($accepted, '/*') && str_starts_with($mime, Str::before($accepted, '*'))))) {
-                continue;
-            }
-            $options[$asset['id']] = $this->optionLabel($asset['name'] ?? __('filament-canvas::canvas.media'), $asset['image'] ?? $asset['url'] ?? null);
+        foreach ((new MediaLibrary($context))->assets($element, $collection, trim($search), 100) as $asset) {
+            $options[$asset['id']] = $this->optionLabel($asset['name'], $asset['image']);
         }
 
         return $options;
+    }
+
+    private function assetLabels(array $ids, string $collection): array
+    {
+        $labels = [];
+        foreach ($this->resolvePickerAssets($ids, $collection, 'view') as $asset) {
+            $labels[$asset['id']] = $this->optionLabel($asset['name'], $asset['image']);
+        }
+
+        return $labels;
+    }
+
+    #[Renderless]
+    public function resolveSelectedAssets(array $ids, string $collection): array
+    {
+        return $this->resolvePickerAssets($ids, $collection, 'update');
+    }
+
+    private function resolvePickerAssets(array $ids, string $collection, string $ability): array
+    {
+        $context = $this->context();
+        $plugin = $this->plugin();
+        $plugin->resolveDocumentStore($this->documentType)->authorize($context, $ability);
+        if ($this->inspectorType === null) {
+            return [];
+        }
+
+        $element = CanvasElements::resolve($plugin->elements($this->documentType), $this->inspectorType);
+        $settings = $element instanceof HasElementMedia ? ($element->mediaCollections()[$collection] ?? null) : null;
+        if ($settings === null || count($ids) > max(1, (int) ($settings['max_files'] ?? 1))) {
+            return [];
+        }
+
+        $library = new MediaLibrary($context);
+        $assets = [];
+        foreach ($ids as $id) {
+            if ((is_int($id) || (is_string($id) && $id !== '')) && ($media = $library->find($id, $element, $collection))) {
+                $assets[] = $library->describe($media, $settings);
+            }
+        }
+
+        return $assets;
     }
 
     /** Context supplied by the document owner, also available to custom property views. */
@@ -593,12 +639,11 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
                 $inserted[] = $library->upload($file, $element, $policy['name']);
             }
             $this->inspectorAssetCache = [];
-            $assets = $this->inspectorAssets();
             $rawState = $this->imageUploadData;
             data_set($rawState, $policy['upload_field'], null);
             $this->imageUploadForm->fill($rawState);
 
-            return ['asset' => $inserted[0], 'inserted' => $inserted, 'assets' => $assets, 'collection' => $policy['name']];
+            return ['asset' => $inserted[0], 'inserted' => $inserted, 'assets' => $inserted, 'collection' => $policy['name']];
         } finally {
             foreach ($files as $file) {
                 $file->delete();
@@ -721,6 +766,28 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         return $plugin->resolvePreviewRenderer($this->documentType)->render($document->withBlocks($blocks), $context);
     }
 
+    private function linkedAssets(CanvasDocument $document, EditorContext $context, array $elements): array
+    {
+        $library = new MediaLibrary($context->forRendering(true, $context->data));
+        $assets = [];
+        foreach ($document->blocks as $block) {
+            $element = CanvasElements::resolve($elements, $block['type']);
+            if (! $element instanceof HasElementMedia) {
+                continue;
+            }
+
+            foreach ($library->resolve($element, $block) as $collection) {
+                foreach (array_is_list($collection) ? $collection : [$collection] as $asset) {
+                    if (array_key_exists('mime_type', $asset)) {
+                        $assets[$asset['id']] = $asset;
+                    }
+                }
+            }
+        }
+
+        return array_values($assets);
+    }
+
     public function render(): View
     {
         $plugin = $this->plugin();
@@ -729,7 +796,6 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
         $store->authorize($context, 'view');
         $document = $this->document();
         $readOnly = ! $this->canUpdate();
-        $assets = $readOnly ? [] : $this->inspectorAssets();
         $canUpload = ! $readOnly && $context->document instanceof HasMedia;
         $elements = $plugin->elements($this->documentType);
         foreach ($readOnly ? [] : ($this->inspectorType === null ? CanvasElements::types($elements) : [$this->inspectorType]) as $type) {
@@ -748,7 +814,7 @@ class CanvasEditor extends Component implements HasActions, HasSchemas
             'readOnly' => $readOnly,
             'metadata' => $document->metadata,
             'initial' => $readOnly ? [] : $document->blocks,
-            'assets' => $assets,
+            'assets' => $readOnly ? [] : $this->linkedAssets($document, $context, $elements),
             'canUploadAssets' => $canUpload,
             'width' => $document->width,
             'height' => $document->height,

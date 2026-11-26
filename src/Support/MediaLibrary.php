@@ -68,25 +68,33 @@ class MediaLibrary
             && (! isset($settings['authorize']) || $settings['authorize']($media, $this->context));
     }
 
-    public function assets(HasElementMedia $element, ?string $collection = null): array
+    public function assets(HasElementMedia $element, ?string $collection = null, string $search = '', ?int $limit = null): array
     {
         if ($collection === null) {
             $assets = [];
             foreach (array_keys($element->mediaCollections()) as $name) {
-                foreach ($this->assets($element, $name) as $asset) {
+                foreach ($this->assets($element, $name, $search, $limit) as $asset) {
                     $assets[$asset['id']] = $asset;
                 }
             }
 
-            return array_values($assets);
+            return array_slice(array_values($assets), 0, $limit);
         }
         if ($this->context->document === null && ! isset($element->mediaCollections()[$collection]['query'])) {
             return [];
         }
 
-        return $this->query($element, $collection)->with('model')->orderBy('name')->get()
-            ->filter(fn (Media $media) => $this->canUse($media, $element->mediaCollections()[$collection]))
-            ->map(fn (Media $media) => $this->describe($media))->values()->all();
+        $settings = $element->mediaCollections()[$collection];
+        $query = $this->query($element, $collection)->with('model')->orderBy('name')->orderBy('id');
+        if ($search !== '') {
+            $query->whereLike('name', '%' . $search . '%');
+        }
+
+        $assets = ($limit === null ? $query->get() : $query->lazy(100))
+            ->filter(fn (Media $media) => $this->canUse($media, $settings));
+
+        return ($limit === null ? $assets : $assets->take($limit))
+            ->map(fn (Media $media) => $this->describe($media, $settings))->values()->all();
     }
 
     public function find(int|string $id, HasElementMedia $element, string $collection): ?Media
@@ -99,9 +107,14 @@ class MediaLibrary
         return $media && $this->canUse($media, $element->mediaCollections()[$collection]) ? $media : null;
     }
 
-    public function describe(Media $media): array
+    public function describe(Media $media, array $previewSettings = []): array
     {
-        $url = MediaFiles::url($media, $this->context);
+        $url = MediaFiles::url(
+            $media,
+            $this->context,
+            $previewSettings['preview_conversion'] ?? null,
+            $previewSettings['preview_conversion_fallback'] ?? true,
+        );
 
         return ['id' => $media->getKey(), 'name' => $media->name, 'url' => $url, 'image' => $url, 'mime_type' => $media->mime_type];
     }
@@ -116,7 +129,7 @@ class MediaLibrary
             $resolved = [];
             foreach ($ids as $id) {
                 if ((is_string($id) || is_int($id)) && ($media = $this->find($id, $element, $name))) {
-                    $resolved[] = $this->describe($media);
+                    $resolved[] = $this->describe($media, $this->context->preview ? $settings : []);
                 }
             }
             $result[$name] = $multiple ? $resolved : ($resolved[0] ?? ['id' => $reference, 'image' => '', 'name' => '']);
@@ -188,7 +201,7 @@ class MediaLibrary
                         throw ValidationException::withMessages(['file' => __('filament-canvas::canvas.upload_unavailable')]);
                     }
 
-                    return $this->describe($media);
+                    return $this->describe($media, $settings);
                 } catch (Throwable $exception) {
                     $created = $owner->media()->whereNotIn('id', $before)->get()->all();
                     throw $exception;

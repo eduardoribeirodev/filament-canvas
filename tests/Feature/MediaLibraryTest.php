@@ -157,14 +157,36 @@ class MediaLibraryTest extends TestCase
         $this->assertSame('Selo', $editor->effects['returns'][0]['data']['name']);
     }
 
+    public function test_initial_editor_assets_only_include_linked_media(): void
+    {
+        $owner = TestDocument::create();
+        $logo = $this->image($owner, 'logo.png');
+        $this->image($owner, 'photo.png');
+        $plugin = $this->plugin($this->filteredElement());
+        $this->panel($plugin);
+        $block = $this->block();
+        $block['data']['image_id'] = $logo->id;
+        $store = $plugin->resolveDocumentStore('document');
+        $context = $this->context($owner);
+        $saved = $store->save($context, [$block], $store->load($context)->revision);
+        $editor = Livewire::test(CanvasEditor::class, ['documentType' => 'document', 'documentId' => $owner->id, 'panelId' => 'direct-media']);
+        $this->assertSame([$saved->blocks[0]['data']['image_id']], array_column($editor->instance()->render()->getData()['assets'], 'id'));
+
+    }
+
     public function test_editor_pickers_and_uploads_use_the_selected_collection(): void
     {
         $owner = TestDocument::create();
         $logo = $this->image($owner, 'logo.png');
         $photo = $this->image($owner, 'photo.png');
         $this->panel($this->plugin($this->filteredElement()));
-        $editor = Livewire::test(CanvasEditor::class, ['documentType' => 'document', 'documentId' => $owner->id, 'panelId' => 'direct-media'])
-            ->call('selectInspector', 'asset', 'image-one', $this->block(), 1)->assertHasNoErrors();
+        $editor = Livewire::test(CanvasEditor::class, ['documentType' => 'document', 'documentId' => $owner->id, 'panelId' => 'direct-media']);
+        $editor->call('selectInspector', 'asset', 'image-one', $this->block(), 1)->assertHasNoErrors();
+        $this->assertSame([], $editor->instance()->imageForm->getComponentByStatePath('image')->getOptions());
+        $this->assertSame([$logo->id], array_keys($editor->instance()->assetOptions('LOG', 'image')));
+        $this->assertSame([], $editor->instance()->assetOptions('photo', 'image'));
+        $editor->call('resolveSelectedAssets', [$logo->id, $photo->id], 'gallery')->assertHasNoErrors();
+        $this->assertSame([$photo->id], array_column($editor->effects['returns'][0], 'id'));
         $this->assertSame([$logo->id], array_keys($editor->instance()->assetOptions('', 'image')));
         $this->assertSame([$photo->id], array_keys($editor->instance()->assetOptions('', 'gallery')));
         $editor->set('imageUploadData.file', UploadedFile::fake()->image('logo.png'))->call('uploadAsset', 'image')->assertHasNoErrors();
